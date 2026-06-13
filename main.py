@@ -11,7 +11,7 @@ def main():
         gui_main()
     elif len(sys.argv) > 1:
         print(f"Module inconnu: {sys.argv[1]}")
-        print("Usage: python main.py gui")
+        print("Utilisation : python main.py gui")
     else:
         from gui import main as gui_main
         gui_main()

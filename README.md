@@ -18,8 +18,14 @@ CyberAI est un framework modulaire tout-en-un qui combine l'apprentissage automa
 
 ## Installation
 
+**Méthode 1 - Installation automatique (recommandée) :**
 ```bash
-git clone https://github.com/tonuser/cyber_ai.git
+curl -sL https://github.com/abdokhaldi679-eng/cyber_ai/raw/main/install.sh | bash
+```
+
+**Méthode 2 - Installation manuelle :**
+```bash
+git clone https://github.com/abdokhaldi679-eng/cyber_ai.git
 cd cyber_ai
 pip install -r requirements.txt
 ```

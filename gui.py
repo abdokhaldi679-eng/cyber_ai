@@ -2,6 +2,7 @@
 import sys
 import os
 import socket
+import ssl
 import threading
 import time
 import json
@@ -1701,6 +1702,24 @@ class ExploitTab(BaseTab):
         ttk.Button(f3, text="Encoder", command=self.run_encode, width=15).grid(row=2, column=1, pady=6)
         ttk.Button(f3, text="Encoder + Wrap Python", command=self.run_encode_wrap, width=22).grid(row=2, column=2, columnspan=2, pady=6)
 
+        # ── Tab 4: Vuln Scanner ──
+        vuln_frame = ttk.Frame(nb)
+        nb.add(vuln_frame, text="Vuln Scanner")
+        f4 = ttk.LabelFrame(vuln_frame, text="Scan de vulnérabilités (Nginx, Apache)")
+        f4.pack(fill=tk.X, padx=8, pady=8)
+
+        ttk.Label(f4, text="Cible:").grid(row=0, column=0, padx=5, pady=4, sticky="w")
+        self.entry_vuln_target = ttk.Entry(f4, width=38, font=("TkDefaultFont", 11))
+        self.entry_vuln_target.grid(row=0, column=1, padx=5, pady=4, sticky="w")
+        self.entry_vuln_target.insert(0, "example.com")
+
+        ttk.Label(f4, text="Ports:").grid(row=0, column=2, padx=5, pady=4, sticky="w")
+        self.entry_vuln_ports = ttk.Entry(f4, width=18)
+        self.entry_vuln_ports.grid(row=0, column=3, padx=5, pady=4, sticky="w")
+        self.entry_vuln_ports.insert(0, "80,443,8080,8443")
+
+        ttk.Button(f4, text="🔍 Scan Nginx", command=self.run_nginx_scan, width=20).grid(row=1, column=0, columnspan=4, pady=6)
+
         # ── Output ──
         self.output = self.make_output(main)
 
@@ -2177,22 +2196,173 @@ class ExploitTab(BaseTab):
             return ":".join(parts)
         return raw
 
-    # ── Exploit Checker ──
-    def run_exploit_check(self):
+    # ── Nginx Vulnerability Scanner ──
+    def run_nginx_scan(self):
         self.clear(self.output)
-        target = self.entry_rs_ip.get().strip()
+        target = self.entry_vuln_target.get().strip()
         if not target:
-            messagebox.showwarning("Attention", "Entrez une IP cible.")
+            messagebox.showwarning("Attention", "Entrez une IP ou URL cible.")
             return
-        self.run_thread(lambda: self.do_exploit_check(target))
+        self.run_thread(lambda: self.do_nginx_scan(target))
 
-    def do_exploit_check(self, target):
-        self.log(self.output, f"Analyse des exploits potentiels pour {target}...", "bold")
-        self.log(self.output, "[!] Module en cours de d\u00e9veloppement.", "warning")
-        self.log(self.output, "  Fonctionnalit\u00e9s \u00e0 venir:", "bold")
-        self.log(self.output, "  - Scan CVE par service/banni\u00e8re")
-        self.log(self.output, "  - Auto-exploitation SMB/SSH/FTP")
-        self.log(self.output, "  - Matching avec base de donn\u00e9es Exploit-DB")
+    def do_nginx_scan(self, target):
+        self.log(self.output, f"{'═'*55}", "bold")
+        self.log(self.output, f"  Scan Nginx — Cible: {target}", "bold")
+        self.log(self.output, f"{'═'*55}", "bold")
+
+        host = target.split("://")[-1].split("/")[0].split(":")[0]
+        ports = [int(p) for p in self.entry_vuln_ports.get().split(",") if p.strip()]
+        found_nginx = False
+
+        for port in ports:
+            self.log(self.output, f"\n── Port {port} ──", "bold")
+            result = self._check_port(host, port)
+            if result:
+                found_nginx = True
+
+        if not found_nginx:
+            self.log(self.output, "\n  Aucun serveur nginx détecté sur les ports scannés.", "warning")
+
+        self.log(self.output, f"\n{'─'*55}", "bold")
+        self.log(self.output, "[✓] Scan terminé.", "success")
+
+    def _check_port(self, host, port):
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(5)
+            if sock.connect_ex((host, port)) != 0:
+                self.log(self.output, "  Fermé", "warning")
+                sock.close()
+                return False
+            self.log(self.output, "  Ouvert", "success")
+
+            banner = b""
+            try:
+                if port in (443, 8443):
+                    ctx = ssl.create_default_context()
+                    ctx.check_hostname = False
+                    ctx.verify_mode = ssl.CERT_NONE
+                    ctx.set_alpn_protocols(["h2", "http/1.1"])
+                    ssock = ctx.wrap_socket(sock, server_hostname=host)
+                    ssock.settimeout(5)
+                    ssock.sendall(f"GET / HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n".encode())
+                    banner = ssock.recv(4096)
+                    alpn = ssock.selected_alpn_protocol()
+                    if alpn:
+                        self.log(self.output, f"    ALPN: {alpn}", "bold")
+                    ssock.close()
+                else:
+                    sock.sendall(f"GET / HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n".encode())
+                    banner = sock.recv(4096)
+                    sock.close()
+            except Exception as e:
+                sock.close()
+                self.log(self.output, f"    Erreur de réception: {e}", "warning")
+                return False
+
+            resp = banner.decode("utf-8", errors="ignore")
+            server = ""
+            for line in resp.split("\r\n"):
+                if line.lower().startswith("server:"):
+                    server = line.split(":", 1)[1].strip()
+                    break
+
+            if not server:
+                self.log(self.output, "    Serveur: Inconnu (headers masqués?)", "bold")
+                return False
+
+            self.log(self.output, f"    Serveur: {server}", "bold")
+
+            if "nginx" in server.lower():
+                self._check_nginx_vulns(host, port, server, resp)
+                return True
+            else:
+                self.log(self.output, "    → Pas du nginx (aucune vuln nginx testée)", "warning")
+                return False
+
+        except Exception as e:
+            self.log(self.output, f"    Erreur: {e}", "error")
+            return False
+
+    def _check_nginx_vulns(self, host, port, server, resp):
+        vm = re.search(r"nginx[/\s]*([\d.]+)", server)
+        version = vm.group(1) if vm else None
+
+        if version:
+            self.log(self.output, f"    Version: {version}", "bold")
+            self._cve_check(version)
+        else:
+            self.log(self.output, "    Version: cachée", "warning")
+
+        self.log(self.output, "  ── CVE-2026-42945 (NGINX Rift) ──", "bold")
+        self._test_42945(host, port, version)
+
+        self.log(self.output, "  ── CVE-2026-49975 (HTTP/2 Bomb) ──", "bold")
+        self._test_49975(host, port)
+
+    def _cve_check(self, version):
+        try:
+            v = [int(x) for x in version.split(".")]
+        except ValueError:
+            self.log(self.output, "    Version non parseable", "warning")
+            return
+
+        reports = []
+        # CVE-2026-42945: 0.6.27 ≤ version ≤ 1.30.0
+        if (v[0] == 0 and v[1] >= 6 and len(v) > 2 and v[2] >= 27) or \
+           (v[0] == 1 and (v[1] < 30 or (v[1] == 30 and len(v) > 2 and v[2] == 0))):
+            reports.append(("CVE-2026-42945", "9.2", "Heap overflow rewrite → RCE/DoS"))
+
+        if reports:
+            for cve, cvss, desc in reports:
+                self.log(self.output, f"    ⚠ {cve} (CVSS {cvss}) — {desc}", "error")
+        else:
+            self.log(self.output, "    ✓ Aucune CVE majeure connue", "success")
+
+    def _test_42945(self, host, port, version):
+        try:
+            scheme = "https" if port in (443, 8443) else "http"
+            sess = self.app.session if hasattr(self.app, 'session') else requests
+
+            # Test with malformed rewrite pattern
+            tests = [
+                ("/${}", 400, "rewrite"),
+                ("/..%2500../", 400, "null byte"),
+            ]
+            for path, expected_code, hint in tests:
+                url = f"{scheme}://{host}:{port}{path}"
+                r = sess.get(url, timeout=5, verify=False)
+                if r.status_code == expected_code and hint in r.text.lower():
+                    self.log(self.output, f"    ⚠ Potentiellement vulnérable ({hint})", "error")
+                elif r.status_code in (400, 404, 405):
+                    self.log(self.output, f"    ✓ Réponse {r.status_code} — safe", "success")
+                else:
+                    self.log(self.output, f"    ? HTTP {r.status_code} — vérifier manuellement", "warning")
+        except Exception as e:
+            self.log(self.output, f"    ? Test échoué: {e}", "warning")
+
+    def _test_49975(self, host, port):
+        if port not in (443, 8443):
+            self.log(self.output, "    ○ Non testé (port non SSL)", "bold")
+            return
+        try:
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            ctx.set_alpn_protocols(["h2", "http/1.1"])
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(5)
+            ssock = ctx.wrap_socket(sock, server_hostname=host)
+            ssock.connect((host, port))
+            alpn = ssock.selected_alpn_protocol()
+            ssock.close()
+
+            if alpn == "h2":
+                self.log(self.output, f"    ⚠ HTTP/2 actif — potentiel CVE-2026-49975 (amplification 70:1)", "error")
+            else:
+                self.log(self.output, f"    ✓ HTTP/2 non supporté (ALPN: {alpn or 'aucun'})", "success")
+        except Exception as e:
+            self.log(self.output, f"    ? Échec: {e}", "warning")
 
 
 # ════════════════════════ 9. PHISHING ════════════════════════

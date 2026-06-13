@@ -3,3 +3,4 @@ python-whois>=0.8.0
 paramiko>=3.0.0
 stem>=1.8.0
 PySocks>=1.7.0
+curl_cffi>=0.15.0

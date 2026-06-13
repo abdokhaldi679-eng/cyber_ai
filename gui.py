@@ -9,6 +9,7 @@ import subprocess
 import random
 import string
 import requests
+import curl_cffi.requests as curl_requests
 import whois
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
@@ -50,6 +51,12 @@ USER_AGENTS = [
     "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
 ]
 
+IMPERSONATE_MAP = [
+    "chrome124", "chrome124", "chrome124", "safari17_0",
+    "firefox133", "firefox133", "firefox133", "chrome124",
+    "firefox133", "chrome124", "chrome124", "safari180",
+]
+
 STEALTH_HEADERS = {
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.9,fr;q=0.8",
@@ -63,11 +70,36 @@ STEALTH_HEADERS = {
 }
 
 
-class StealthSession(requests.Session):
+class ProxyManager:
+    def __init__(self, app):
+        self.app = app
+        self.enabled = False
+        self.url = ""
+        self.username = ""
+        self.password = ""
+
+    def apply(self, session):
+        if not self.enabled or not self.url:
+            return
+        if self.username:
+            proxy_url = f"{self.url}".replace("://", f"://{self.username}:{self.password}@")
+        else:
+            proxy_url = self.url
+        session.proxies.update({
+            "http": proxy_url,
+            "https": proxy_url,
+        })
+
+    def disable(self, session):
+        session.proxies = {}
+
+
+class StealthSession(curl_requests.Session):
     def __init__(self, app):
         super().__init__()
         self.app = app
         self.request_count = 0
+        self.current_impersonate = None
 
     def request(self, method, url, **kwargs):
         cfg = self.app.stealth
@@ -75,16 +107,19 @@ class StealthSession(requests.Session):
             delay = random.uniform(cfg["delay_min"], cfg["delay_max"])
             time.sleep(delay)
             headers = kwargs.setdefault("headers", {})
+            idx = random.randrange(len(USER_AGENTS))
+            ua = USER_AGENTS[idx]
+            imp = IMPERSONATE_MAP[idx]
             if "User-Agent" not in headers:
-                headers["User-Agent"] = random.choice(USER_AGENTS)
+                headers["User-Agent"] = ua
             for k, v in STEALTH_HEADERS.items():
                 headers.setdefault(k, v)
-            if cfg.get("randomize_order"):
-                pass
+            kwargs["impersonate"] = imp
             self.request_count += 1
             if cfg.get("auto_ip") and self.request_count >= cfg["ip_after"]:
                 self.request_count = 0
                 threading.Thread(target=self._do_auto_ip, daemon=True).start()
+        self.app.proxy.apply(self)
         return super().request(method, url, **kwargs)
 
     def _do_auto_ip(self):
@@ -201,6 +236,7 @@ class CyberAI(tk.Tk):
 
         self.session = StealthSession(self)
         self.tor = TorManager(self)
+        self.proxy = ProxyManager(self)
         self.stealth = {
             "enabled": False,
             "delay_min": 0.5,
@@ -356,9 +392,12 @@ class NetworkTab(BaseTab):
         self.log(self.output, f"Scan en cours...\n")
 
         ports = COMMON_PORTS if self.scan_type.get() == "common" else list(range(1, 1025 if self.scan_type.get() == "quick" else 65536))
+        random.shuffle(ports)
 
         open_ports = []
         def check(p):
+            if self.app.stealth.get("enabled"):
+                time.sleep(random.uniform(0.1, 0.5))
             if scan_port(ip, p):
                 open_ports.append(p)
 
@@ -484,8 +523,11 @@ class RouterTab(BaseTab):
     def do_scan_ports(self, ip):
         self.log(self.output, f"Scan des ports sur {ip}...", "bold")
         targets = [22, 23, 80, 443, 8080, 8443]
+        random.shuffle(targets)
         open_ports = []
         for p in targets:
+            if self.app.stealth.get("enabled"):
+                time.sleep(random.uniform(0.2, 0.8))
             if scan_port(ip, p):
                 open_ports.append(p)
                 self.log(self.output, f"  Port {p} ({get_service_name(p)}) ouvert", "success")
@@ -878,7 +920,11 @@ class OSINTTab(BaseTab):
     def do_scan(self, t):
         ip = resolve_target(t)
         self.log(self.output, f"Scan ports pour {ip}:", "bold")
-        for p in [21, 22, 23, 25, 80, 110, 443, 445, 3306, 3389, 8080, 8443]:
+        ports = [21, 22, 23, 25, 80, 110, 443, 445, 3306, 3389, 8080, 8443]
+        random.shuffle(ports)
+        for p in ports:
+            if self.app.stealth.get("enabled"):
+                time.sleep(random.uniform(0.2, 0.8))
             if scan_port(ip, p):
                 self.log(self.output, f"  Port {p} ({get_service_name(p)}) ouvert", "success")
 
@@ -1374,8 +1420,8 @@ class AnonymityTab(BaseTab):
         self.lbl_stealth_status = ttk.Label(sf, text="Stealth: OFF", font=("TkDefaultFont", 10, "bold"), foreground="gray")
         self.lbl_stealth_status.grid(row=0, column=5, padx=15, pady=2)
 
-        # ── Proxy Settings ──
-        sec = ttk.LabelFrame(main, text="Param\u00e8tres Proxy")
+        # ── Tor Settings ──
+        sec = ttk.LabelFrame(main, text="Param\u00e8tres Tor")
         sec.pack(fill=tk.X, pady=(0, 6))
         ttk.Label(sec, text="SOCKS Port:").grid(row=0, column=0, padx=5, pady=4, sticky="w")
         self.entry_socks = ttk.Entry(sec, width=8)
@@ -1388,16 +1434,36 @@ class AnonymityTab(BaseTab):
         ttk.Label(sec, text="Password:").grid(row=0, column=4, padx=5, pady=4, sticky="w")
         self.entry_pass = ttk.Entry(sec, width=15, show="*")
         self.entry_pass.grid(row=0, column=5, padx=5, pady=4, sticky="w")
-        ttk.Button(sec, text="Appliquer", command=self.apply_settings, width=10).grid(row=0, column=6, padx=5)
+        ttk.Button(sec, text="Appliquer", command=self.apply_tor_settings, width=10).grid(row=0, column=6, padx=5)
 
-        info = ttk.LabelFrame(main, text="Info — \u00catre ind\u00e9tectable")
+        # ── Residential Proxy ──
+        ps = ttk.LabelFrame(main, text="Proxy R\u00e9sidentiel (optionnel — remplace Tor)")
+        ps.pack(fill=tk.X, pady=(0, 6))
+        self.btn_proxy = ttk.Button(ps, text="Activer Proxy", command=self.toggle_proxy, width=20)
+        self.btn_proxy.grid(row=0, column=0, padx=8, pady=8, rowspan=2)
+        ttk.Label(ps, text="URL (ex: http://proxy:port):").grid(row=0, column=1, padx=3, pady=2, sticky="e")
+        self.entry_purl = ttk.Entry(ps, width=35)
+        self.entry_purl.grid(row=0, column=2, padx=3, pady=2, sticky="w")
+        ttk.Label(ps, text="User:").grid(row=1, column=1, padx=3, pady=2, sticky="e")
+        self.entry_puser = ttk.Entry(ps, width=15)
+        self.entry_puser.grid(row=1, column=2, padx=3, pady=2, sticky="w")
+        ttk.Label(ps, text="Pass:").grid(row=1, column=3, padx=3, pady=2, sticky="e")
+        self.entry_ppass = ttk.Entry(ps, width=15, show="*")
+        self.entry_ppass.grid(row=1, column=4, padx=3, pady=2, sticky="w")
+        self.lbl_proxy_status = ttk.Label(ps, text="Proxy: OFF", font=("TkDefaultFont", 9, "bold"), foreground="gray")
+        self.lbl_proxy_status.grid(row=0, column=5, padx=10, pady=2)
+
+        info = ttk.LabelFrame(main, text="Protection compl\u00e8te — Anti-d\u00e9tection")
         info.pack(fill=tk.X, pady=(0, 6))
         ttk.Label(info, text=(
-            "Stealth rend vos requ\u00eates impossibles \u00e0 distinguer d'un vrai navigateur :\n"
+            "Stack Anti-d\u00e9tection actif (Stealth ON) :\n"
+            "  \u2022 TLS fingerprint : imite Chrome/Firefox/Safari r\u00e9els (curl_cffi)\n"
             "  \u2022 User-Agent al\u00e9atoire parmi 12 navigateurs r\u00e9cents\n"
             "  \u2022 Headers HTTP r\u00e9alistes (Accept, Sec-Fetch, etc.)\n"
             "  \u2022 D\u00e9lai al\u00e9atoire entre chaque requ\u00eate (\u00e9vite le rate-limiting)\n"
             "  \u2022 Auto-changement d'IP Tor toutes les N requ\u00eates\n"
+            "  \u2022 Ordre des ports randomis\u00e9 (+ d\u00e9lai entre chaque test)\n"
+            "  \u2022 Proxy r\u00e9sidentiel support\u00e9 (HTTP/HTTPS/SOCKS5)\n"
             "  \u2022 Aucun log local conserv\u00e9 (utilisez Wipe)"
         ), foreground="gray", wraplength=780).pack(padx=10, pady=8, anchor="w")
 
@@ -1410,7 +1476,7 @@ class AnonymityTab(BaseTab):
             self.btn_tor.config(text="Activer Tor")
             self.lbl_status.config(text="Status: D\u00e9sactiv\u00e9", foreground="black")
         else:
-            self.apply_settings()
+            self.apply_tor_settings()
             success, msg = self.app.tor.enable()
             if success:
                 self.btn_tor.config(text="D\u00e9sactiver Tor")
@@ -1477,6 +1543,7 @@ class AnonymityTab(BaseTab):
                 self.btn_stealth.config(text="D\u00e9sactiver Stealth")
                 self.lbl_stealth_status.config(text="Stealth: ON", foreground="cyan")
                 self.log(self.output, "Mode furtif ACTIV\u00c9.", "success")
+                self.log(self.output, f"  TLS fingerprint: impersonate Chrome/Firefox/Safari")
                 self.log(self.output, f"  User-Agent: al\u00e9atoire (12 profils)")
                 self.log(self.output, f"  D\u00e9lai: {dmin}-{dmax}s")
                 if cfg["auto_ip"]:
@@ -1494,8 +1561,8 @@ class AnonymityTab(BaseTab):
         self.log(self.output, "Tous les logs ont \u00e9t\u00e9 effac\u00e9s.", "success")
         self.log(self.output, "Aucune trace locale conserv\u00e9e.", "success")
 
-    # ── Settings ──
-    def apply_settings(self):
+    # ── Tor Settings ──
+    def apply_tor_settings(self):
         try:
             self.app.tor.socks_port = int(self.entry_socks.get().strip())
             self.app.tor.control_port = int(self.entry_ctrl.get().strip())
@@ -1505,6 +1572,32 @@ class AnonymityTab(BaseTab):
                 self.app.tor.enable()
         except ValueError:
             messagebox.showerror("Erreur", "Ports invalides.")
+
+    # ── Residential Proxy ──
+    def toggle_proxy(self):
+        pm = self.app.proxy
+        if pm.enabled:
+            pm.enabled = False
+            pm.disable(self.app.session)
+            self.btn_proxy.config(text="Activer Proxy")
+            self.lbl_proxy_status.config(text="Proxy: OFF", foreground="gray")
+            self.log(self.output, "Proxy r\u00e9sidentiel d\u00e9sactiv\u00e9.", "warning")
+        else:
+            url = self.entry_purl.get().strip()
+            if not url:
+                messagebox.showerror("Erreur", "Entrez une URL de proxy.")
+                return
+            pm.url = url
+            pm.username = self.entry_puser.get().strip()
+            pm.password = self.entry_ppass.get().strip()
+            pm.enabled = True
+            pm.apply(self.app.session)
+            self.btn_proxy.config(text="D\u00e9sactiver Proxy")
+            self.lbl_proxy_status.config(text="Proxy: ON", foreground="cyan")
+            self.log(self.output, f"Proxy activ\u00e9: {pm.url}", "success")
+            if pm.username:
+                self.log(self.output, f"  Authentification: {pm.username}", "success")
+        self.app.update_tor_status()
 
 
 # ════════════════════════ MAIN ════════════════════════

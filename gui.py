@@ -35,6 +35,64 @@ SERVICE_MAP = {21: "FTP", 22: "SSH", 23: "Telnet", 25: "SMTP", 53: "DNS", 80: "H
                3389: "RDP", 5432: "PostgreSQL", 5900: "VNC", 6379: "Redis", 8080: "HTTP-Alt",
                8443: "HTTPS-Alt", 27017: "MongoDB"}
 
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:127.0) Gecko/20100101 Firefox/127.0",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:126.0) Gecko/20100101 Firefox/126.0",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 14.5; rv:127.0) Gecko/20100101 Firefox/127.0",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64; rv:127.0) Gecko/20100101 Firefox/127.0",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edg/124.0.0.0",
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
+]
+
+STEALTH_HEADERS = {
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9,fr;q=0.8",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Connection": "keep-alive",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Sec-Fetch-User": "?1",
+    "Upgrade-Insecure-Requests": "1",
+}
+
+
+class StealthSession(requests.Session):
+    def __init__(self, app):
+        super().__init__()
+        self.app = app
+        self.request_count = 0
+
+    def request(self, method, url, **kwargs):
+        cfg = self.app.stealth
+        if cfg.get("enabled"):
+            delay = random.uniform(cfg["delay_min"], cfg["delay_max"])
+            time.sleep(delay)
+            headers = kwargs.setdefault("headers", {})
+            if "User-Agent" not in headers:
+                headers["User-Agent"] = random.choice(USER_AGENTS)
+            for k, v in STEALTH_HEADERS.items():
+                headers.setdefault(k, v)
+            if cfg.get("randomize_order"):
+                pass
+            self.request_count += 1
+            if cfg.get("auto_ip") and self.request_count >= cfg["ip_after"]:
+                self.request_count = 0
+                threading.Thread(target=self._do_auto_ip, daemon=True).start()
+        return super().request(method, url, **kwargs)
+
+    def _do_auto_ip(self):
+        try:
+            self.app.tor.new_identity()
+        except:
+            pass
+
 
 # ──────────────────────── FONCTIONS OUTILS ────────────────────────
 def scan_port(ip, port, timeout=1):
@@ -141,8 +199,16 @@ class CyberAI(tk.Tk):
         style.configure("Error.TLabel", foreground="red", font=("TkDefaultFont", 10, "bold"))
         style.configure("Warning.TLabel", foreground="orange", font=("TkDefaultFont", 10))
 
-        self.session = requests.Session()
+        self.session = StealthSession(self)
         self.tor = TorManager(self)
+        self.stealth = {
+            "enabled": False,
+            "delay_min": 0.5,
+            "delay_max": 2.0,
+            "auto_ip": False,
+            "ip_after": 10,
+            "randomize_order": False,
+        }
 
         notebook = ttk.Notebook(self)
         notebook.pack(fill=tk.BOTH, expand=True, padx=8, pady=(8, 0))
@@ -169,6 +235,8 @@ class CyberAI(tk.Tk):
         self.tor_indicator.pack(side=tk.LEFT, padx=5)
         self.ip_indicator = ttk.Label(self.status_bar, text="IP: ---")
         self.ip_indicator.pack(side=tk.LEFT, padx=5)
+        self.stealth_indicator = ttk.Label(self.status_bar, text="\u25cf Stealth: OFF", foreground="gray")
+        self.stealth_indicator.pack(side=tk.LEFT, padx=5)
         ttk.Label(self.status_bar, text="CyberAI v2.0", foreground="gray").pack(side=tk.RIGHT, padx=5)
 
         self.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -180,6 +248,10 @@ class CyberAI(tk.Tk):
         else:
             self.tor_indicator.config(text="\u25cf Tor: D\u00e9sactiv\u00e9", foreground="gray")
             self.ip_indicator.config(text="IP: ---")
+        if self.stealth["enabled"]:
+            self.stealth_indicator.config(text="\u25cf Stealth: ON", foreground="cyan")
+        else:
+            self.stealth_indicator.config(text="\u25cf Stealth: OFF", foreground="gray")
         self.update_idletasks()
 
     def _on_close(self):
@@ -1244,7 +1316,7 @@ class DoSTab(BaseTab):
         self.btn_stop.config(state=tk.DISABLED)
 
 
-# ════════════════════════ 7. ANONYMITY / TOR ════════════════════════
+# ════════════════════════ 7. ANONYMITY / TOR / STEALTH ════════════════════════
 class AnonymityTab(BaseTab):
     def __init__(self, parent, app):
         super().__init__(parent, app)
@@ -1254,8 +1326,9 @@ class AnonymityTab(BaseTab):
         main = ttk.Frame(self.parent)
         main.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-        f = ttk.LabelFrame(main, text="Contr\u00f4le Tor / Anonymat")
-        f.pack(fill=tk.X, pady=(0, 8))
+        # ── Tor Control ──
+        f = ttk.LabelFrame(main, text="Contr\u00f4le Tor")
+        f.pack(fill=tk.X, pady=(0, 6))
 
         self.btn_tor = ttk.Button(f, text="Activer Tor", command=self.toggle_tor, width=20)
         self.btn_tor.grid(row=0, column=0, padx=10, pady=8)
@@ -1269,37 +1342,68 @@ class AnonymityTab(BaseTab):
 
         ctrl_frame = ttk.Frame(f)
         ctrl_frame.grid(row=1, column=0, columnspan=2, pady=(0, 8))
-        ttk.Button(ctrl_frame, text="Nouvelle Identit\u00e9 Tor", command=self.run_new_id, width=22).pack(side=tk.LEFT, padx=5)
-        ttk.Button(ctrl_frame, text="V\u00e9rifier IP", command=self.run_check_ip, width=15).pack(side=tk.LEFT, padx=5)
-        ttk.Button(ctrl_frame, text="Wipe All Logs", command=self.run_wipe, width=15).pack(side=tk.LEFT, padx=5)
+        ttk.Button(ctrl_frame, text="Nouvelle Identit\u00e9", command=self.run_new_id, width=18).pack(side=tk.LEFT, padx=3)
+        ttk.Button(ctrl_frame, text="V\u00e9rifier IP", command=self.run_check_ip, width=14).pack(side=tk.LEFT, padx=3)
+        ttk.Button(ctrl_frame, text="Wipe All Logs", command=self.run_wipe, width=14).pack(side=tk.LEFT, padx=3)
 
+        # ── Stealth Mode ──
+        sf = ttk.LabelFrame(main, text="Mode Furtif (Stealth) — \u00c9vite la d\u00e9tection")
+        sf.pack(fill=tk.X, pady=(0, 6))
+
+        self.btn_stealth = ttk.Button(sf, text="Activer Stealth", command=self.toggle_stealth, width=20)
+        self.btn_stealth.grid(row=0, column=0, padx=10, pady=8, rowspan=2)
+
+        ttk.Label(sf, text="Delai min (s):").grid(row=0, column=1, padx=3, pady=2, sticky="e")
+        self.entry_dmin = ttk.Entry(sf, width=6)
+        self.entry_dmin.insert(0, "0.5")
+        self.entry_dmin.grid(row=0, column=2, padx=3, pady=2, sticky="w")
+
+        ttk.Label(sf, text="Delai max (s):").grid(row=0, column=3, padx=3, pady=2, sticky="e")
+        self.entry_dmax = ttk.Entry(sf, width=6)
+        self.entry_dmax.insert(0, "2.0")
+        self.entry_dmax.grid(row=0, column=4, padx=3, pady=2, sticky="w")
+
+        ttk.Label(sf, text="Auto IP toutes les:").grid(row=1, column=1, padx=3, pady=2, sticky="e")
+        self.entry_ipfreq = ttk.Entry(sf, width=6)
+        self.entry_ipfreq.insert(0, "10")
+        self.entry_ipfreq.grid(row=1, column=2, padx=3, pady=2, sticky="w")
+        ttk.Label(sf, text="requ\u00eates").grid(row=1, column=3, padx=2, pady=2, sticky="w")
+        self.var_autoip = tk.BooleanVar(value=False)
+        ttk.Checkbutton(sf, text="Auto IP", variable=self.var_autoip).grid(row=1, column=4, padx=5, pady=2)
+
+        self.lbl_stealth_status = ttk.Label(sf, text="Stealth: OFF", font=("TkDefaultFont", 10, "bold"), foreground="gray")
+        self.lbl_stealth_status.grid(row=0, column=5, padx=15, pady=2)
+
+        # ── Proxy Settings ──
         sec = ttk.LabelFrame(main, text="Param\u00e8tres Proxy")
-        sec.pack(fill=tk.X, pady=(0, 8))
-        ttk.Label(sec, text="SOCKS Port:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        sec.pack(fill=tk.X, pady=(0, 6))
+        ttk.Label(sec, text="SOCKS Port:").grid(row=0, column=0, padx=5, pady=4, sticky="w")
         self.entry_socks = ttk.Entry(sec, width=8)
         self.entry_socks.insert(0, "9050")
-        self.entry_socks.grid(row=0, column=1, padx=5, pady=5, sticky="w")
-        ttk.Label(sec, text="Control Port:").grid(row=0, column=2, padx=5, pady=5, sticky="w")
+        self.entry_socks.grid(row=0, column=1, padx=5, pady=4, sticky="w")
+        ttk.Label(sec, text="Control Port:").grid(row=0, column=2, padx=5, pady=4, sticky="w")
         self.entry_ctrl = ttk.Entry(sec, width=8)
         self.entry_ctrl.insert(0, "9051")
-        self.entry_ctrl.grid(row=0, column=3, padx=5, pady=5, sticky="w")
-        ttk.Label(sec, text="Password:").grid(row=0, column=4, padx=5, pady=5, sticky="w")
+        self.entry_ctrl.grid(row=0, column=3, padx=5, pady=4, sticky="w")
+        ttk.Label(sec, text="Password:").grid(row=0, column=4, padx=5, pady=4, sticky="w")
         self.entry_pass = ttk.Entry(sec, width=15, show="*")
-        self.entry_pass.grid(row=0, column=5, padx=5, pady=5, sticky="w")
+        self.entry_pass.grid(row=0, column=5, padx=5, pady=4, sticky="w")
         ttk.Button(sec, text="Appliquer", command=self.apply_settings, width=10).grid(row=0, column=6, padx=5)
 
-        info = ttk.LabelFrame(main, text="Informations")
-        info.pack(fill=tk.X, pady=(0, 8))
+        info = ttk.LabelFrame(main, text="Info — \u00catre ind\u00e9tectable")
+        info.pack(fill=tk.X, pady=(0, 6))
         ttk.Label(info, text=(
-            "Tor doit \u00eatre install\u00e9 et le service lanc\u00e9.\n"
-            "  - Installation: sudo apt install tor\n"
-            "  - D\u00e9marrer: sudo systemctl start tor\n"
-            "  - Pour NEWNYM: d\u00e9commenter 'ControlPort 9051' dans /etc/tor/torrc\n"
-            "  - Cookie auth par d\u00e9faut (laissez password vide)"
-        ), foreground="gray", wraplength=700).pack(padx=10, pady=10, anchor="w")
+            "Stealth rend vos requ\u00eates impossibles \u00e0 distinguer d'un vrai navigateur :\n"
+            "  \u2022 User-Agent al\u00e9atoire parmi 12 navigateurs r\u00e9cents\n"
+            "  \u2022 Headers HTTP r\u00e9alistes (Accept, Sec-Fetch, etc.)\n"
+            "  \u2022 D\u00e9lai al\u00e9atoire entre chaque requ\u00eate (\u00e9vite le rate-limiting)\n"
+            "  \u2022 Auto-changement d'IP Tor toutes les N requ\u00eates\n"
+            "  \u2022 Aucun log local conserv\u00e9 (utilisez Wipe)"
+        ), foreground="gray", wraplength=780).pack(padx=10, pady=8, anchor="w")
 
         self.output = self.make_output(main)
 
+    # ── Tor ──
     def toggle_tor(self):
         if self.app.tor.enabled:
             success, msg = self.app.tor.disable()
@@ -1351,6 +1455,38 @@ class AnonymityTab(BaseTab):
             self.log(self.output, f"  Erreur: {e}", "error")
         self.app.update_tor_status()
 
+    # ── Stealth ──
+    def toggle_stealth(self):
+        cfg = self.app.stealth
+        if cfg["enabled"]:
+            cfg["enabled"] = False
+            self.btn_stealth.config(text="Activer Stealth")
+            self.lbl_stealth_status.config(text="Stealth: OFF", foreground="gray")
+            self.log(self.output, "Mode furtif d\u00e9sactiv\u00e9.", "warning")
+        else:
+            try:
+                dmin = float(self.entry_dmin.get().strip())
+                dmax = float(self.entry_dmax.get().strip())
+                if dmin < 0 or dmax < dmin:
+                    raise ValueError
+                cfg["delay_min"] = dmin
+                cfg["delay_max"] = dmax
+                cfg["auto_ip"] = self.var_autoip.get()
+                cfg["ip_after"] = int(self.entry_ipfreq.get().strip())
+                cfg["enabled"] = True
+                self.btn_stealth.config(text="D\u00e9sactiver Stealth")
+                self.lbl_stealth_status.config(text="Stealth: ON", foreground="cyan")
+                self.log(self.output, "Mode furtif ACTIV\u00c9.", "success")
+                self.log(self.output, f"  User-Agent: al\u00e9atoire (12 profils)")
+                self.log(self.output, f"  D\u00e9lai: {dmin}-{dmax}s")
+                if cfg["auto_ip"]:
+                    self.log(self.output, f"  Auto IP: toutes les {cfg['ip_after']} req.")
+            except ValueError:
+                messagebox.showerror("Erreur", "Valeurs de d\u00e9lai invalides (min >= 0, max >= min).")
+                return
+        self.app.update_tor_status()
+
+    # ── Wipe ──
     def run_wipe(self):
         for tab in self.app.tabs.values():
             if hasattr(tab, "output"):
@@ -1358,6 +1494,7 @@ class AnonymityTab(BaseTab):
         self.log(self.output, "Tous les logs ont \u00e9t\u00e9 effac\u00e9s.", "success")
         self.log(self.output, "Aucune trace locale conserv\u00e9e.", "success")
 
+    # ── Settings ──
     def apply_settings(self):
         try:
             self.app.tor.socks_port = int(self.entry_socks.get().strip())

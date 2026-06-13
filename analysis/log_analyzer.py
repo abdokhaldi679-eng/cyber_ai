@@ -12,8 +12,8 @@ class LogAnalyzer:
                 r"(?i)(failed|invalid|denied).*(login|password|auth)", re.IGNORECASE
             ),
             "sql_injection": re.compile(
-                r"(?i)(union.*select|select.*from|drop\s+table|'
-                 r"or\s+1=1|--\s|;|exec\s+xp_)",
+                r"(?i)(union.*select|select.*from|drop\s+table|'"
+                r"or\s+1=1|--\s|;|exec\s+xp_)",
                 re.IGNORECASE
             ),
             "xss_attempt": re.compile(

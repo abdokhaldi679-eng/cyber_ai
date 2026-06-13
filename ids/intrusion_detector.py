@@ -84,8 +84,13 @@ class IntrusionDetector:
             np.random.seed(42)
             n_normal = 500
             n_anomaly = 50
-            normal = np.random.randn(n_normal, 5) * 0.5 + np.array([10, 3, 500, 300, 50])
-            anomaly = np.random.randn(n_anomaly, 5) * 2.0 + np.array([100, 0, 5000, 100, 5])
+            n_features = len(self.feature_names)
+            normal_means = np.array([10, 3, 500, 300, 50, 0.5, 0.2, 5, 2, 0.8, 0.1,
+                                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+            anomaly_means = np.array([100, 0, 5000, 100, 5, 0.0, 0.5, 1, 0, 0.1, 0.5,
+                                      1, 1, 1, 1, 1, 1, 1, 1, 1, 1])
+            normal = np.random.randn(n_normal, n_features) * 0.5 + normal_means
+            anomaly = np.random.randn(n_anomaly, n_features) * 2.0 + anomaly_means
             X = np.vstack([normal, anomaly])
             y = np.array([0] * n_normal + [1] * n_anomaly)
             self.train(X, y)

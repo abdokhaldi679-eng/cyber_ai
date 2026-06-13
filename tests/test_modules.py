@@ -20,7 +20,8 @@ class TestIntrusionDetector(unittest.TestCase):
 
     def test_predict(self):
         import numpy as np
-        X = np.random.randn(10, 5)
+        self.detector._load_or_create_default()
+        X = np.random.randn(10, 21)
         preds = self.detector.predict(X)
         self.assertIsNotNone(preds)
         self.assertEqual(len(preds), 10)

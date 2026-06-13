@@ -36,7 +36,6 @@ def cmd_intrusion(args):
     monitor.start()
 
     if args.analyze:
-        from ids.intrusion_detector import IntrusionDetector
         det = IntrusionDetector()
         test_features = [
             10, 3, 500, 300, 50, 0.5, 0.2, 5, 2, 0.8, 0.1,
@@ -626,9 +625,16 @@ Exemples:
     parser_all = subparsers.add_parser("all", help="Analyse complète (tout-en-un)")
     parser_all.add_argument("target", nargs="?", help="Cible (IP ou domaine)")
 
+    parser_gui = subparsers.add_parser("gui", help="Lancer l'interface graphique")
+
     parser_help = subparsers.add_parser("help", help="Aide détaillée")
 
     args = parser.parse_args()
+
+    if args.module == "gui":
+        from gui import main as gui_main
+        gui_main()
+        return
 
     if not args.module or args.module == "help":
         parser.print_help()

@@ -502,7 +502,8 @@ class RouterTab(BaseTab):
         self.entry_ip.grid(row=0, column=1, padx=5, pady=5)
 
         ttk.Label(f, text="Port:").grid(row=0, column=2, padx=5, pady=5, sticky="w")
-        self.entry_port = ttk.Spinbox(f, from_=1, to=65535, width=6, value=80)
+        self.entry_port = ttk.Spinbox(f, from_=1, to=65535, width=6)
+        self.entry_port.set(80)
         self.entry_port.grid(row=0, column=3, padx=5, pady=5)
 
         ttk.Label(f, text="Fabricant:").grid(row=0, column=4, padx=5, pady=5, sticky="w")
@@ -1060,7 +1061,8 @@ class PasswordTab(BaseTab):
         gen_frame = ttk.Frame(f)
         gen_frame.grid(row=1, column=0, columnspan=3, pady=5)
         ttk.Label(gen_frame, text="Longueur:").pack(side=tk.LEFT, padx=5)
-        self.spin_len = ttk.Spinbox(gen_frame, from_=8, to=64, width=5, value=20)
+        self.spin_len = ttk.Spinbox(gen_frame, from_=8, to=64, width=5)
+        self.spin_len.set(20)
         self.spin_len.pack(side=tk.LEFT, padx=5)
         ttk.Button(gen_frame, text="G\u00e9n\u00e9rer", command=self.run_generate).pack(side=tk.LEFT, padx=5)
         ttk.Button(gen_frame, text="Analyser", command=self.run_analyze).pack(side=tk.LEFT, padx=5)
@@ -1307,7 +1309,8 @@ class DoSTab(BaseTab):
         f.columnconfigure(1, weight=1)
 
         ttk.Label(f, text="Threads:").grid(row=1, column=0, padx=5, pady=5, sticky="w")
-        self.spin_threads = ttk.Spinbox(f, from_=1, to=100, width=5, value=10)
+        self.spin_threads = ttk.Spinbox(f, from_=1, to=100, width=5)
+        self.spin_threads.set(10)
         self.spin_threads.grid(row=1, column=1, padx=5, pady=5, sticky="w")
 
         btn_frame = ttk.Frame(f)
@@ -2620,7 +2623,8 @@ class PhishingTab(BaseTab):
                      ).grid(row=0, column=1, padx=5, pady=4, sticky="w")
 
         ttk.Label(cfg, text="Port:").grid(row=0, column=2, padx=5, pady=4, sticky="w")
-        self.entry_port = ttk.Spinbox(cfg, from_=1024, to=65535, width=6, value=8080)
+        self.entry_port = ttk.Spinbox(cfg, from_=1024, to=65535, width=6)
+        self.entry_port.set(8080)
         self.entry_port.grid(row=0, column=3, padx=5, pady=4, sticky="w")
 
         ttk.Label(cfg, text="URL locale:").grid(row=0, column=4, padx=5, pady=4, sticky="w")

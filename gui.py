@@ -1086,6 +1086,128 @@ class WebTab(BaseTab):
 
 # ════════════════════════ 4. OSINT ════════════════════════
 class OSINTTab(BaseTab):
+    GOOGLE_DORKS = [
+        ("site:{t} intitle:index.of", "Repertoires ouverts"),
+        ('site:{t} inurl:php?', "Pages PHP avec parametres"),
+        ("site:{t} ext:pdf", "Fichiers PDF"),
+        ("site:{t} ext:doc ext:docx", "Documents Word"),
+        ("site:{t} ext:xls ext:xlsx", "Documents Excel"),
+        ("site:{t} inurl:admin", "Pages admin"),
+        ("site:{t} inurl:login", "Pages login"),
+        ("site:{t} inurl:config", "Config files"),
+        ("site:{t} inurl:backup", "Backup files"),
+        ("site:{t} inurl:wp-", "WordPress paths"),
+        ('site:{t} intitle:"phpinfo()"', "phpinfo"),
+        ("site:{t} intitle:login intitle:panel", "Login panels"),
+        ("site:{t} inurl:sql", "SQL dumps/paths"),
+        ("site:{t} inurl:upload", "Upload pages"),
+        ("site:{t} inurl:api", "API endpoints"),
+        ("site:{t} inurl:.git", "Git repositories"),
+        ("site:{t} inurl:.env", "ENV files"),
+        ("site:{t} inurl:debug", "Debug pages"),
+        ("site:{t} inurl:test", "Test pages"),
+        ("site:{t} inurl:wsdl", "WSDL files"),
+        ('site:{t} intitle:"webcam"', "Webcams"),
+        ('site:{t} intitle:"Error" "Warning"', "Error messages"),
+        ("site:{t} inurl:dashboard", "Dashboards"),
+        ("site:{t} inurl:console", "Consoles"),
+        ("site:{t} inurl:phpmyadmin", "phpMyAdmin"),
+    ]
+
+    OSINT_SUBDOMAIN_WORDLIST = [
+        "www", "mail", "ftp", "admin", "blog", "webmail", "forum", "shop",
+        "api", "dev", "test", "beta", "vpn", "remote", "portal", "support",
+        "wiki", "app", "cdn", "static", "assets", "img", "dns", "ns1", "ns2",
+        "smtp", "pop3", "imap", "mysql", "db", "backup", "git", "jenkins",
+        "jira", "confluence", "help", "status", "docs", "tracker", "cloud",
+        "mx1", "mx2", "cpanel", "whm", "server", "gateway", "firewall",
+        "proxy", "intranet", "owa", "exchange", "calendar", "drive",
+        "login", "register", "download", "upload", "media", "news",
+        "autodiscover", "m", "mobile", "direct", "start", "ssl",
+        "adminer", "phpmyadmin", "pgadmin", "webmin", "route", "switch",
+        "diag", "stats", "log", "error", "report", "analytics", "tracking",
+        "syslog", "mail2", "pop", "webdisk", "ns", "ns0", "ns3", "mail1",
+        "vps", "dedicated", "host", "hosting", "whmcs", "sponsors",
+        "partner", "affiliates", "cart", "checkout", "payment",
+        "images", "video", "stream", "tv", "radio", "chat", "board",
+        "community", "user", "member", "profile", "password",
+        "activation", "verify", "confirm", "subscription", "unsubscribe",
+        "ad", "adserver", "banner", "click", "stats", "analytics",
+        "tracker", "counter", "survey", "poll", "vote", "review",
+        "rating", "feedback", "bug", "issue", "feature", "request",
+        "todo", "roadmap", "changelog", "release", "version", "update",
+        "patch", "hotfix", "setup", "install", "config", "configuration",
+        "sync", "synchronize", "replica", "node", "cluster", "grid",
+        "docker", "k8s", "kubernetes", "registry", "harbor", "quay",
+        "sonar", "sonarqube", "nexus", "artifactory",
+        "svn", "subversion", "gitlab", "gitlab-ci", "jenkins-ci",
+        "build", "ci", "cd", "staging", "prod", "production",
+        "monitor", "monitoring", "alert", "alertmanager", "pager",
+        "wiki", "confluence", "slack", "chat", "mattermost",
+        "zoom", "teams", "meet", "webex", "gotomeeting",
+        "calendar", "cal", "scheduler", "booking", "reservation",
+        "docs", "drive", "sheets", "slides", "forms",
+        "shop", "store", "cart", "billing", "invoice", "payment",
+        "webmail", "roundcube", "rainloop", "squirrelmail",
+        "cacti", "nagios", "zabbix", "icinga", "grafana", "kibana",
+        "prometheus", "alertmanager", "consul", "nomad", "vault",
+        "elasticsearch", "logstash", "kafka", "zookeeper",
+        "hadoop", "spark", "hive", "hbase", "cassandra",
+        "mongo", "mongodb", "redis", "memcached", "couchdb",
+        "mysql", "mariadb", "postgres", "postgresql", "oracle",
+        "phpmyadmin", "adminer", "pgmyadmin", "phppgadmin",
+        "pma", "php-mysql-admin",
+    ]
+
+    TECH_SIGNATURES = [
+        (r"WordPress", "WordPress", "CMS"),
+        (r"Drupal", "Drupal", "CMS"),
+        (r"Joomla", "Joomla", "CMS"),
+        (r"Magento", "Magento", "E-commerce"),
+        (r"Shopify", "Shopify", "E-commerce"),
+        (r"WooCommerce", "WooCommerce", "E-commerce"),
+        (r"PrestaShop", "PrestaShop", "E-commerce"),
+        (r"nginx", "Nginx", "Serveur Web"),
+        (r"Apache", "Apache", "Serveur Web"),
+        (r"cloudflare", "Cloudflare", "CDN/WAF"),
+        (r"Laravel", "Laravel", "Framework"),
+        (r"Django", "Django", "Framework"),
+        (r"Flask", "Flask", "Framework"),
+        (r"Express", "Express.js", "Framework"),
+        (r"Symfony", "Symfony", "Framework"),
+        (r"CodeIgniter", "CodeIgniter", "Framework"),
+        (r"CakePHP", "CakePHP", "Framework"),
+        (r"ASP\.NET", "ASP.NET", "Framework"),
+        (r"Ruby on Rails", "Ruby on Rails", "Framework"),
+        (r"React", "React", "Bibliotheque JS"),
+        (r"Vue\.js", "Vue.js", "Bibliotheque JS"),
+        (r"Angular", "Angular", "Bibliotheque JS"),
+        (r"jQuery", "jQuery", "Bibliotheque JS"),
+        (r"Bootstrap", "Bootstrap", "Framework CSS"),
+        (r"Tailwind CSS", "Tailwind CSS", "Framework CSS"),
+        (r"Font Awesome", "Font Awesome", "ICONS"),
+        (r"Google Analytics", "Google Analytics", "Analytics"),
+        (r"Matomo", "Matomo", "Analytics"),
+        (r"Cloudflare", "Cloudflare", "CDN/WAF"),
+        (r"Fastly", "Fastly", "CDN"),
+        (r"Akamai", "Akamai", "CDN"),
+        (r"Varnish", "Varnish", "Cache"),
+        (r"Sucuri", "Sucuri", "WAF"),
+        (r"ModSecurity", "ModSecurity", "WAF"),
+        (r"Barracuda", "Barracuda", "WAF"),
+        (r"F5 BIG-IP", "F5 BIG-IP", "WAF"),
+        (r"AWS WAF", "AWS WAF", "WAF"),
+        (r"Imperva", "Imperva", "WAF"),
+        (r"X-Frame-Options", "X-Frame-Options", "Securite"),
+        (r"X-Content-Type-Options", "X-Content-Type-Options", "Securite"),
+        (r"X-XSS-Protection", "X-XSS-Protection", "Securite"),
+        (r"Content-Security-Policy", "Content-Security-Policy", "Securite"),
+        (r"Strict-Transport-Security", "HSTS", "Securite"),
+        (r"PHP", "PHP", "Langage"),
+        (r"Python", "Python", "Langage"),
+        (r"Node\.js", "Node.js", "Runtime"),
+    ]
+
     def __init__(self, parent, app):
         super().__init__(parent, app)
         self.build()
@@ -1104,15 +1226,34 @@ class OSINTTab(BaseTab):
 
         btn_frame = ttk.Frame(f)
         btn_frame.grid(row=1, column=0, columnspan=2, pady=5)
-        ttk.Button(btn_frame, text="Whois", command=self.run_whois).pack(side=tk.LEFT, padx=3)
-        ttk.Button(btn_frame, text="Résolution DNS", command=self.run_dns).pack(side=tk.LEFT, padx=3)
-        ttk.Button(btn_frame, text="Scanner Ports", command=self.run_scan).pack(side=tk.LEFT, padx=3)
-        ttk.Button(btn_frame, text="OSINT Complet", command=self.run_full).pack(side=tk.LEFT, padx=3)
-        ttk.Button(btn_frame, text="Sous-domaines", command=self.run_subdomains).pack(side=tk.LEFT, padx=3)
-        ttk.Button(btn_frame, text="GeoIP", command=self.run_geoip).pack(side=tk.LEFT, padx=3)
-        ttk.Button(btn_frame, text="Cert. Trans.", command=self.run_crtsh).pack(side=tk.LEFT, padx=3)
-        ttk.Button(btn_frame, text="Traceroute", command=self.run_traceroute).pack(side=tk.LEFT, padx=3)
-        ttk.Button(btn_frame, text="Shodan", command=self.run_shodan).pack(side=tk.LEFT, padx=3)
+
+        row1 = ttk.Frame(btn_frame)
+        row1.pack(fill=tk.X, pady=1)
+        for b in [
+            ("Whois", self.run_whois), ("DNS", self.run_dns), ("Ports", self.run_scan),
+            ("OSINT Full", self.run_full), ("Sous-domaines", self.run_subdomains),
+            ("GeoIP", self.run_geoip),
+        ]:
+            ttk.Button(row1, text=b[0], command=b[1], width=12).pack(side=tk.LEFT, padx=2)
+
+        row2 = ttk.Frame(btn_frame)
+        row2.pack(fill=tk.X, pady=1)
+        for b in [
+            ("DNS Records", self.run_dns_records), ("Google Dorks", self.run_dorks),
+            ("Emails", self.run_emails), ("Wayback", self.run_wayback),
+            ("Reverse IP", self.run_reverse_ip), ("Tech Detect", self.run_tech_detect),
+        ]:
+            ttk.Button(row2, text=b[0], command=b[1], width=12).pack(side=tk.LEFT, padx=2)
+
+        row3 = ttk.Frame(btn_frame)
+        row3.pack(fill=tk.X, pady=1)
+        for b in [
+            ("crt.sh", self.run_crtsh), ("Traceroute", self.run_traceroute),
+            ("Shodan", self.run_shodan), ("Pwned", self.run_pwned),
+            ("Threat Intel", self.run_threat), ("Social", self.run_social),
+            ("Export", self.run_export),
+        ]:
+            ttk.Button(row3, text=b[0], command=b[1], width=12).pack(side=tk.LEFT, padx=2)
 
         self.output = self.make_output(main)
 
@@ -1123,29 +1264,33 @@ class OSINTTab(BaseTab):
             return None
         return t
 
+    # --- Whois ---
     def run_whois(self):
         self.clear(self.output)
         t = self.get_target()
-        if not t:
-            return
+        if not t: return
         self.run_thread(lambda: self.do_whois(t))
 
     def do_whois(self, t):
         self.log(self.output, f"Whois pour {t}:", "bold")
         try:
             w = whois.whois(t)
-            for field in ["registrar", "name", "org", "country", "creation_date", "expiration_date", "name_servers"]:
+            for field in ["registrar", "name", "org", "country", "creation_date",
+                          "expiration_date", "name_servers", "emails", "address",
+                          "city", "state", "zipcode"]:
                 val = w.get(field)
                 if val:
+                    if isinstance(val, list):
+                        val = ", ".join(str(v) for v in val[:3])
                     self.log(self.output, f"  {field}: {val}")
         except Exception as e:
             self.log(self.output, f"Erreur whois: {e}", "error")
 
+    # --- DNS Resolution ---
     def run_dns(self):
         self.clear(self.output)
         t = self.get_target()
-        if not t:
-            return
+        if not t: return
         self.run_thread(lambda: self.do_dns(t))
 
     def do_dns(self, t):
@@ -1159,31 +1304,142 @@ class OSINTTab(BaseTab):
             except:
                 pass
         except:
-            self.log(self.output, "  R\u00e9solution \u00e9chou\u00e9e", "error")
+            self.log(self.output, "  Resolution echouee", "error")
 
+    # --- Port Scan ---
     def run_scan(self):
         self.clear(self.output)
         t = self.get_target()
-        if not t:
-            return
+        if not t: return
         self.run_thread(lambda: self.do_scan(t))
 
     def do_scan(self, t):
         ip = resolve_target(t)
         self.log(self.output, f"Scan ports pour {ip}:", "bold")
-        ports = [21, 22, 23, 25, 80, 110, 443, 445, 3306, 3389, 8080, 8443]
-        random.shuffle(ports)
-        for p in ports:
+        random.shuffle(COMMON_PORTS)
+        for p in COMMON_PORTS:
             if self.app.stealth.get("enabled"):
                 time.sleep(random.uniform(0.2, 0.8))
             if scan_port(ip, p):
                 self.log(self.output, f"  Port {p} ({get_service_name(p)}) ouvert", "success")
 
+    # --- DNS Records (extended) ---
+    def run_dns_records(self):
+        self.clear(self.output)
+        t = self.get_target()
+        if not t: return
+        self.run_thread(lambda: self.do_dns_records(t))
+
+    def do_dns_records(self, t):
+        host = t.split("://")[-1].split("/")[0]
+        self.log(self.output, f"DNS Records pour {host}:", "bold")
+        record_types = ["A", "AAAA", "MX", "NS", "TXT", "SOA", "CNAME", "SRV", "CAA", "NAPTR", "DS", "DNSKEY"]
+        for rtype in record_types:
+            try:
+                if os.name == "nt":
+                    result = subprocess.run(["nslookup", "-type=" + rtype, host], capture_output=True, text=True, timeout=5)
+                else:
+                    result = subprocess.run(["dig", "+short", host, rtype], capture_output=True, text=True, timeout=5)
+                output = result.stdout.strip()
+                if output:
+                    for line in output.split("\n"):
+                        line = line.strip()
+                        if line:
+                            self.log(self.output, f"  {rtype}: {line[:200]}", "success")
+            except:
+                pass
+        if os.name != "nt":
+            try:
+                result = subprocess.run(["dig", "+short", host, "AXFR"], capture_output=True, text=True, timeout=5)
+                if result.stdout.strip():
+                    self.log(self.output, "\n  [!] Zone Transfer (AXFR) possible !", "error")
+                    for line in result.stdout.strip().split("\n"):
+                        self.log(self.output, f"    {line}")
+            except:
+                pass
+
+    # --- Google Dorking ---
+    def run_dorks(self):
+        self.clear(self.output)
+        t = self.get_target()
+        if not t: return
+        self.run_thread(lambda: self.do_dorks(t))
+
+    def do_dorks(self, t):
+        self.log(self.output, f"Google Dorking pour {t}:", "bold")
+        self.log(self.output, "  (Les URLs sont des exemples - ouvrez-les manuellement)", "warning")
+        self.log(self.output, "")
+        for dork_query, desc in self.GOOGLE_DORKS:
+            q = dork_query.format(t=t)
+            url = f"https://www.google.com/search?q={requests.utils.quote(q)}"
+            self.log(self.output, f"  [{desc}]", "bold")
+            self.log(self.output, f"    {url}")
+            time.sleep(0.05)
+
+    # --- Email Harvesting ---
+    def run_emails(self):
+        self.clear(self.output)
+        t = self.get_target()
+        if not t: return
+        self.run_thread(lambda: self.do_emails(t))
+
+    def do_emails(self, t):
+        host = t.split("://")[-1].split("/")[0]
+        self.log(self.output, f"Email Harvesting pour {host}:", "bold")
+        emails = set()
+
+        pages = [f"https://{host}", f"http://{host}", f"https://www.{host}",
+                 f"https://{host}/contact", f"https://{host}/about", f"https://{host}/team",
+                 f"https://{host}/privacy", f"https://{host}/terms"]
+        for url in pages:
+            try:
+                r = requests.get(url, timeout=8, headers={"User-Agent": random.choice(USER_AGENTS)}, verify=False)
+                found = re.findall(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.{1}[a-zA-Z]{2,}", r.text)
+                for e in found:
+                    domain_part = e.split("@")[1]
+                    if host.replace("www.", "") in domain_part or host.split(".")[0] in domain_part:
+                        emails.add(e.lower())
+            except:
+                pass
+
+        hunter_key = "YOUR_HUNTER_API_KEY"
+        try:
+            r = requests.get(
+                f"https://api.hunter.io/v2/domain-search?domain={host}&api_key={hunter_key}",
+                timeout=10
+            )
+            if r.status_code == 200:
+                data = r.json().get("data", {})
+                for e in data.get("emails", []):
+                    emails.add(e.get("value", "").lower())
+                self.log(self.output, f"  Hunter.io: {len(data.get('emails', []))} emails", "success")
+        except:
+            pass
+
+        try:
+            r = requests.get(
+                f"https://webcache.googleusercontent.com/search?q=cache:{host}",
+                timeout=10, headers={"User-Agent": random.choice(USER_AGENTS)}
+            )
+            found = re.findall(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.{1}[a-zA-Z]{2,}", r.text)
+            for e in found:
+                if host.replace("www.", "") in e.split("@")[1]:
+                    emails.add(e.lower())
+        except:
+            pass
+
+        if emails:
+            self.log(self.output, f"\n  {len(emails)} email(s) trouve(s):", "success")
+            for e in sorted(emails):
+                self.log(self.output, f"    {e}")
+        else:
+            self.log(self.output, "  Aucun email trouve.", "warning")
+
+    # --- Full OSINT Scan ---
     def run_full(self):
         self.clear(self.output)
         t = self.get_target()
-        if not t:
-            return
+        if not t: return
         self.run_thread(lambda: self.do_full(t))
 
     def do_full(self, t):
@@ -1207,75 +1463,101 @@ class OSINTTab(BaseTab):
             self.log(self.output, f"  Statut: {r.status_code}")
             self.log(self.output, f"  Server: {r.headers.get('Server', 'N/A')}")
         except:
-            self.log(self.output, "  Pas de r\u00e9ponse HTTP", "warning")
+            self.log(self.output, "  Pas de reponse HTTP", "warning")
+        self.log(self.output, "\n[DNS Records]")
+        self.do_dns_records(t)
+        self.log(self.output, "\n[Sous-domaines]")
+        self.do_subdomains(t)
+        self.log(self.output, "\n[GeoIP]")
+        self.do_geoip(t)
+        self.log(self.output, "\n[Emails]")
+        self.do_emails(t)
 
-    # ── Subdomain Enumeration ──
+    # --- Subdomain Enumeration ---
     def run_subdomains(self):
         self.clear(self.output)
         t = self.get_target()
-        if not t:
-            return
+        if not t: return
         self.run_thread(lambda: self.do_subdomains(t))
 
     def do_subdomains(self, t):
-        self.log(self.output, f"Enum\u00e9ration de sous-domaines pour {t}...", "bold")
-        wordlist = ["www", "mail", "ftp", "admin", "blog", "webmail", "forum", "shop",
-                    "api", "dev", "test", "beta", "vpn", "remote", "portal", "support",
-                    "wiki", "app", "cdn", "static", "assets", "img", "dns", "ns1", "ns2",
-                    "smtp", "pop3", "imap", "mysql", "db", "backup", "git", "jenkins",
-                    "jira", "confluence", "help", "status", "docs", "tracker", "cloud",
-                    "mx1", "mx2", "cpanel", "whm", "server", "gateway", "firewall",
-                    "proxy", "intranet", "owa", "exchange", "calendar", "drive",
-                    "login", "register", "download", "upload", "media", "news"]
-        found = []
-        for sub in wordlist:
+        self.log(self.output, f"Enumeration de sous-domaines pour {t}...", "bold")
+        found = {}
+        for sub in self.OSINT_SUBDOMAIN_WORDLIST:
             domain = f"{sub}.{t}"
             try:
                 ip = socket.gethostbyname(domain)
-                found.append((domain, ip))
-                self.log(self.output, f"  \u2713 {domain} \u2192 {ip}", "success")
+                found[domain] = ip
+                self.log(self.output, f"  V {domain} -> {ip}", "success")
             except:
                 pass
+        try:
+            r = requests.get(f"https://crt.sh/?q={t}&output=json", timeout=15, headers={"User-Agent": "Mozilla/5.0"})
+            if r.status_code == 200:
+                data = r.json()
+                for entry in data[:100]:
+                    name = entry.get("name_value", "")
+                    for n in name.split("\n"):
+                        n = n.strip().lower()
+                        if n.endswith(t) and n not in found:
+                            try:
+                                ip = socket.gethostbyname(n)
+                                found[n] = ip
+                                self.log(self.output, f"  V {n} -> {ip} (crt.sh)", "success")
+                            except:
+                                pass
+        except:
+            pass
         if not found:
-            self.log(self.output, "  Aucun sous-domaine trouv\u00e9.", "warning")
+            self.log(self.output, "  Aucun sous-domaine trouve.", "warning")
         else:
-            self.log(self.output, f"\nTotal: {len(found)} sous-domaine(s) trouv\u00e9(s).", "bold")
+            self.log(self.output, f"\nTotal: {len(found)} sous-domaine(s) trouve(s).", "bold")
 
-    # ── GeoIP Lookup ──
+    # --- GeoIP ---
     def run_geoip(self):
         self.clear(self.output)
         t = self.get_target()
-        if not t:
-            return
+        if not t: return
         self.run_thread(lambda: self.do_geoip(t))
 
     def do_geoip(self, t):
         ip = resolve_target(t)
-        self.log(self.output, f"G\u00e9olocalisation pour {ip}:", "bold")
+        self.log(self.output, f"Geolocalisation pour {ip}:", "bold")
         try:
-            r = self.app.session.get(f"http://ip-api.com/json/{ip}", timeout=8)
+            r = requests.get(f"http://ip-api.com/json/{ip}", timeout=8)
             if r.status_code == 200:
                 data = r.json()
                 if data.get("status") == "success":
                     self.log(self.output, f"  Pays: {data.get('country', 'N/A')}", "success")
-                    self.log(self.output, f"  R\u00e9gion: {data.get('regionName', 'N/A')}")
+                    self.log(self.output, f"  Region: {data.get('regionName', 'N/A')}")
                     self.log(self.output, f"  Ville: {data.get('city', 'N/A')}")
                     self.log(self.output, f"  ISP: {data.get('isp', 'N/A')}")
                     self.log(self.output, f"  Organisation: {data.get('org', 'N/A')}")
-                    self.log(self.output, f"  Coordonn\u00e9es: {data.get('lat', '?')}, {data.get('lon', '?')}")
+                    self.log(self.output, f"  Coordonnees: {data.get('lat', '?')}, {data.get('lon', '?')}")
+                    self.log(self.output, f"  AS: {data.get('as', 'N/A')}")
+                    self.log(self.output, f"  Timezone: {data.get('timezone', 'N/A')}")
                 else:
                     self.log(self.output, f"  Erreur API: {data.get('message', 'inconnue')}", "error")
             else:
                 self.log(self.output, "  Service indisponible.", "error")
         except Exception as e:
             self.log(self.output, f"  Erreur: {e}", "error")
+        try:
+            r = requests.get(f"https://ipapi.co/{ip}/json/", timeout=8, headers={"User-Agent": random.choice(USER_AGENTS)})
+            if r.status_code == 200:
+                data = r.json()
+                self.log(self.output, f"\n  [ipapi.co] Pays: {data.get('country_name', 'N/A')}")
+                self.log(self.output, f"  [ipapi.co] Capitale: {data.get('country_capital', 'N/A')}")
+                self.log(self.output, f"  [ipapi.co] Monnaie: {data.get('currency', 'N/A')}")
+                self.log(self.output, f"  [ipapi.co] Indicatif: +{data.get('country_calling_code', 'N/A')}")
+        except:
+            pass
 
-    # ── Certificate Transparency (crt.sh) ──
+    # --- crt.sh ---
     def run_crtsh(self):
         self.clear(self.output)
         t = self.get_target()
-        if not t:
-            return
+        if not t: return
         self.run_thread(lambda: self.do_crtsh(t))
 
     def do_crtsh(self, t):
@@ -1286,89 +1568,329 @@ class OSINTTab(BaseTab):
                 data = r.json()
                 seen = set()
                 count = 0
-                for entry in data[:50]:
+                for entry in data[:200]:
                     name = entry.get("name_value", "")
                     for n in name.split("\n"):
                         n = n.strip().lower()
-                        if n and n not in seen:
+                        if n and n not in seen and (n.endswith(t) or t in n):
                             seen.add(n)
-                            self.log(self.output, f"  \u2713 {n}", "success")
+                            self.log(self.output, f"  V {n}", "success")
                             count += 1
-                self.log(self.output, f"\nTotal: {count} certificats/subdomaines trouvés.", "bold")
+                self.log(self.output, f"\nTotal: {count} certificats/subdomaines trouves.", "bold")
             else:
-                self.log(self.output, f"  Erreur API: HTTP {r.status_code}", "warning")
+                self.log(self.output, f"  Erreur HTTP {r.status_code}", "warning")
         except Exception as e:
             self.log(self.output, f"  Erreur: {e}", "error")
 
-    # ── Traceroute ──
+    # --- Traceroute ---
     def run_traceroute(self):
         self.clear(self.output)
         t = self.get_target()
-        if not t:
-            return
+        if not t: return
         self.run_thread(lambda: self.do_traceroute(t))
 
     def do_traceroute(self, t):
         self.log(self.output, f"Traceroute vers {t}:", "bold")
         try:
             host = t.split("://")[-1].split("/")[0]
-            param = "-n" if os.name == "nt" else "-n"
-            result = subprocess.run(
-                ["traceroute" if os.name != "nt" else "tracert", param, host],
-                capture_output=True, text=True, timeout=30
-            )
-            if result.returncode == 0:
-                self.log(self.output, result.stdout)
+            if os.name != "nt":
+                result = subprocess.run(["traceroute", "-n", "-m", "20", host], capture_output=True, text=True, timeout=30)
+                if result.returncode == 0:
+                    self.log(self.output, result.stdout)
+                else:
+                    self.log(self.output, "Traceroute non disponible.", "warning")
             else:
-                result2 = subprocess.run(
-                    ["traceroute", "-n", "-m", "15", host],
-                    capture_output=True, text=True, timeout=15
-                )
-                if result2.returncode == 0:
-                    self.log(self.output, result2.stdout)
+                result = subprocess.run(["tracert", "-h", "20", host], capture_output=True, text=True, timeout=30)
+                if result.returncode == 0:
+                    self.log(self.output, result.stdout)
                 else:
                     self.log(self.output, "Traceroute non disponible.", "warning")
         except FileNotFoundError:
-            self.log(self.output, "  Traceroute non installé.", "warning")
+            self.log(self.output, "  Traceroute non installe.", "warning")
         except subprocess.TimeoutExpired:
             self.log(self.output, "  Timeout.", "warning")
         except Exception as e:
             self.log(self.output, f"  Erreur: {e}", "error")
 
-    # ── Shodan ──
-    def run_shodan(self):
+    # --- Wayback Machine ---
+    def run_wayback(self):
         self.clear(self.output)
         t = self.get_target()
-        if not t:
-            return
-        self.run_thread(lambda: self.do_shodan(t))
+        if not t: return
+        self.run_thread(lambda: self.do_wayback(t))
 
-    def do_shodan(self, t):
-        self.log(self.output, f"Shodan lookup pour {t}:", "bold")
-        ip = resolve_target(t)
-        api_key = "YOUR_SHODAN_API_KEY"
+    def do_wayback(self, t):
+        host = t.split("://")[-1].split("/")[0]
+        self.log(self.output, f"Wayback Machine pour {host}:", "bold")
         try:
-            r = requests.get(f"https://api.shodan.io/shodan/host/{ip}?key={api_key}", timeout=10)
+            r = requests.get(
+                f"https://web.archive.org/cdx/search/cdx?url=*.{host}/*&output=json&fl=original,timestamp,statuscode&limit=200",
+                timeout=20, headers={"User-Agent": random.choice(USER_AGENTS)}
+            )
             if r.status_code == 200:
                 data = r.json()
-                self.log(self.output, f"  IP: {data.get('ip_str', ip)}", "success")
-                self.log(self.output, f"  Organisation: {data.get('org', 'N/A')}")
-                self.log(self.output, f"  OS: {data.get('os', 'N/A')}")
-                self.log(self.output, f"  Ports ouverts: {', '.join(str(p) for p in data.get('ports', []))}")
-                for service in data.get('data', [])[:5]:
-                    port = service.get('port', '?')
-                    transport = service.get('transport', '?')
-                    product = service.get('product', 'Inconnu')
-                    self.log(self.output, f"    {port}/{transport} - {product}")
-            elif r.status_code == 403:
-                self.log(self.output, "  API key invalide. Configurez votre clé Shodan.", "warning")
-                self.log(self.output, "  (Éditez 'YOUR_SHODAN_API_KEY' dans do_shodan)", "warning")
+                if len(data) > 1:
+                    self.log(self.output, f"  {len(data)-1} URLs archivees (50 premieres):", "success")
+                    for entry in data[1:51]:
+                        if len(entry) >= 3:
+                            self.log(self.output, f"    [{entry[1][:8]}] {entry[2][:3]} {entry[0][:150]}")
+                else:
+                    self.log(self.output, "  Aucune archive trouvee.", "warning")
             else:
-                self.log(self.output, f"  Erreur: HTTP {r.status_code}", "warning")
+                self.log(self.output, f"  Erreur HTTP {r.status_code}", "warning")
+        except Exception as e:
+            self.log(self.output, f"  Erreur: {e}", "error")
+        try:
+            r = requests.get(f"https://archive.org/wayback/available?url={host}", timeout=10)
+            if r.status_code == 200:
+                data = r.json()
+                closest = data.get("archived_snapshots", {}).get("closest", {})
+                if closest:
+                    self.log(self.output, f"\n  Dernier snapshot: {closest.get('timestamp', '?')}", "success")
+                    self.log(self.output, f"  URL: {closest.get('url', '?')}")
+        except:
+            pass
+
+    # --- HaveIBeenPwned ---
+    def run_pwned(self):
+        self.clear(self.output)
+        t = self.get_target()
+        if not t: return
+        self.run_thread(lambda: self.do_pwned(t))
+
+    def do_pwned(self, t):
+        host = t.split("://")[-1].split("/")[0]
+        self.log(self.output, f"HaveIBeenPwned pour {host}:", "bold")
+        try:
+            r = requests.get(
+                f"https://haveibeenpwned.com/api/v3/breaches?domain={host}",
+                timeout=15, headers={"hibp-api-key": "YOUR_HIBP_API_KEY", "User-Agent": random.choice(USER_AGENTS)}
+            )
+            if r.status_code == 200:
+                data = r.json()
+                if data:
+                    self.log(self.output, f"  {len(data)} breche(s) trouvee(s):", "error")
+                    for b in data[:20]:
+                        self.log(self.output, f"    [!] {b.get('Name', '?')} - {b.get('BreachDate', '?')}")
+                        self.log(self.output, f"        Comptes: {b.get('PwnCount', '?')} - {b.get('DataClasses', [])}")
+                else:
+                    self.log(self.output, "  Aucune breche connue.", "success")
+            elif r.status_code == 404:
+                self.log(self.output, "  Aucune breche connue.", "success")
+            elif r.status_code == 401:
+                self.log(self.output, "  API key invalide (HIBP).", "warning")
+            else:
+                self.log(self.output, f"  HTTP {r.status_code}", "warning")
         except Exception as e:
             self.log(self.output, f"  Erreur: {e}", "error")
 
+    # --- Threat Intelligence ---
+    def run_threat(self):
+        self.clear(self.output)
+        t = self.get_target()
+        if not t: return
+        self.run_thread(lambda: self.do_threat(t))
 
+    def do_threat(self, t):
+        host = t.split("://")[-1].split("/")[0]
+        ip = resolve_target(t)
+        self.log(self.output, f"Threat Intelligence pour {host}:", "bold")
+
+        vt_key = "YOUR_VIRUSTOTAL_API_KEY"
+        try:
+            r = requests.get(
+                f"https://www.virustotal.com/api/v3/domains/{host}",
+                timeout=10, headers={"x-apikey": vt_key}
+            )
+            if r.status_code == 200:
+                data = r.json().get("data", {}).get("attributes", {})
+                stats = data.get("last_analysis_stats", {})
+                self.log(self.output, f"\n  [VirusTotal] Analyse:", "bold")
+                self.log(self.output, f"    Malicious: {stats.get('malicious', 0)}")
+                self.log(self.output, f"    Suspicious: {stats.get('suspicious', 0)}")
+                self.log(self.output, f"    Clean: {stats.get('harmless', 0)}")
+                self.log(self.output, f"    Undetected: {stats.get('undetected', 0)}")
+                categories = data.get("categories", {})
+                if categories:
+                    self.log(self.output, f"    Categories: {', '.join(set(categories.values()))}")
+            elif r.status_code == 401:
+                self.log(self.output, "\n  [VirusTotal] Cle API necessaire.", "warning")
+            else:
+                self.log(self.output, f"\n  [VirusTotal] HTTP {r.status_code}", "warning")
+        except Exception as e:
+            self.log(self.output, f"\n  [VirusTotal] Erreur: {e}", "error")
+
+        otx_key = "YOUR_OTX_API_KEY"
+        try:
+            r = requests.get(
+                f"https://otx.alienvault.com/api/v1/indicators/domain/{host}/general",
+                timeout=10, headers={"X-OTX-API-KEY": otx_key}
+            )
+            if r.status_code == 200:
+                data = r.json()
+                self.log(self.output, f"\n  [AlienVault OTX] Info:", "bold")
+                self.log(self.output, f"    Pulse count: {data.get('pulse_info', {}).get('count', 0)}")
+                pulses = data.get("pulse_info", {}).get("pulses", [])[:5]
+                for p in pulses:
+                    self.log(self.output, f"    - {p.get('name', '?')} ({p.get('tags', [])})")
+            elif r.status_code == 401:
+                self.log(self.output, "\n  [AlienVault] Cle API necessaire.", "warning")
+            else:
+                self.log(self.output, f"\n  [AlienVault] HTTP {r.status_code}", "warning")
+        except Exception as e:
+            self.log(self.output, f"\n  [AlienVault] Erreur: {e}", "error")
+
+        try:
+            r = requests.get(
+                f"https://urlscan.io/api/v1/search/?q=domain:{host}",
+                timeout=10, headers={"User-Agent": random.choice(USER_AGENTS)}
+            )
+            if r.status_code == 200:
+                data = r.json()
+                results = data.get("results", [])[:5]
+                if results:
+                    self.log(self.output, f"\n  [urlscan.io] {len(results)} resultats:", "bold")
+                    for res in results:
+                        page = res.get("page", {})
+                        self.log(self.output, f"    {page.get('domain', '?')} - {page.get('ip', '?')} - {page.get('server', '?')}")
+        except:
+            pass
+
+    # --- Reverse IP ---
+    def run_reverse_ip(self):
+        self.clear(self.output)
+        t = self.get_target()
+        if not t: return
+        self.run_thread(lambda: self.do_reverse_ip(t))
+
+    def do_reverse_ip(self, t):
+        ip = resolve_target(t)
+        self.log(self.output, f"Reverse IP lookup pour {ip}:", "bold")
+        try:
+            r = requests.get(
+                f"https://viewdns.info/reverseip/?host={ip}&t=1",
+                timeout=15, headers={"User-Agent": random.choice(USER_AGENTS)}
+            )
+            if r.status_code == 200:
+                domains = re.findall(r'<td>([a-zA-Z0-9.-]+\.\w+)</td><td>', r.text)
+                if domains:
+                    self.log(self.output, f"  {len(domains)} domaine(s) sur ce IP:", "success")
+                    for d in domains[:30]:
+                        self.log(self.output, f"    V {d}")
+                else:
+                    self.log(self.output, "  Aucun domaine trouve.", "warning")
+            else:
+                self.log(self.output, f"  viewdns.info: HTTP {r.status_code}", "warning")
+        except Exception as e:
+            self.log(self.output, f"  Erreur: {e}", "error")
+        try:
+            r = requests.post(
+                "https://www.yougetsignal.com/tools/web-sites-on-web-server/php/get-web-sites-on-web-server.php",
+                data={"remoteAddress": ip},
+                timeout=15, headers={"User-Agent": random.choice(USER_AGENTS)}
+            )
+            if r.status_code == 200:
+                data = r.json()
+                if data.get("status") == "success":
+                    domains_list = data.get("domainArray", [])
+                    if domains_list:
+                        self.log(self.output, f"\n  [YouGetSignal] {len(domains_list)} domaine(s):", "success")
+                        for d in domains_list[:30]:
+                            self.log(self.output, f"    V {d[0]}")
+        except:
+            pass
+
+    # --- Technology Detection ---
+    def run_tech_detect(self):
+        self.clear(self.output)
+        t = self.get_target()
+        if not t: return
+        self.run_thread(lambda: self.do_tech_detect(t))
+
+    def do_tech_detect(self, t):
+        host = t.split("://")[-1].split("/")[0]
+        self.log(self.output, f"Detection de technologies pour {host}:", "bold")
+        techs = {}
+        for scheme in ["https", "http"]:
+            try:
+                r = requests.get(
+                    f"{scheme}://{host}", timeout=10, verify=False,
+                    headers={"User-Agent": random.choice(USER_AGENTS)}
+                )
+                combined = str(r.headers) + "\n" + r.text[:50000]
+                for pattern, name, category in self.TECH_SIGNATURES:
+                    if re.search(pattern, combined, re.IGNORECASE):
+                        if name not in techs:
+                            techs[name] = category
+                            self.log(self.output, f"  V {name} ({category})", "success")
+                break
+            except:
+                continue
+        if not techs:
+            self.log(self.output, "  Aucune technologie detectee.", "warning")
+
+    # --- Social Media Discovery ---
+    def run_social(self):
+        self.clear(self.output)
+        t = self.get_target()
+        if not t: return
+        self.run_thread(lambda: self.do_social(t))
+
+    def do_social(self, t):
+        host = t.split("://")[-1].split("/")[0]
+        name = host.split(".")[0] if host.count(".") > 1 else host.split(".")[0]
+        self.log(self.output, f"Social Media Discovery pour '{name}' / {host}:", "bold")
+        platforms = {
+            "Twitter/X": f"https://twitter.com/{name}",
+            "GitHub": f"https://github.com/{name}",
+            "LinkedIn": f"https://linkedin.com/company/{name}",
+            "Facebook": f"https://facebook.com/{name}",
+            "Instagram": f"https://instagram.com/{name}",
+            "YouTube": f"https://youtube.com/@{name}",
+            "Reddit": f"https://reddit.com/r/{name}",
+            "Medium": f"https://medium.com/@{name}",
+            "Dev.to": f"https://dev.to/{name}",
+            "Crunchbase": f"https://crunchbase.com/organization/{name}",
+            "AngelList": f"https://angel.co/company/{name}",
+            "Product Hunt": f"https://producthunt.com/@{name}",
+            "Telegram": f"https://t.me/{name}",
+            "Discord": f"https://discord.gg/{name}",
+        }
+        for platform, url in platforms.items():
+            try:
+                r = requests.head(url, timeout=5, allow_redirects=True, headers={"User-Agent": random.choice(USER_AGENTS)})
+                if r.status_code < 400:
+                    self.log(self.output, f"  V {platform}: {url}", "success")
+                else:
+                    self.log(self.output, f"  X {platform} (status {r.status_code})", "warning")
+            except:
+                self.log(self.output, f"  ? {platform} (timeout/erreur)", "warning")
+
+    # --- Export Results ---
+    def run_export(self):
+        content = ""
+        try:
+            content = self.output.get("1.0", tk.END).strip()
+        except:
+            pass
+        if not content:
+            messagebox.showwarning("Attention", "Aucun resultat a exporter.")
+            return
+        fname = filedialog.asksaveasfilename(
+            defaultextension=".txt",
+            filetypes=[("Fichiers texte", "*.txt"), ("Tous", "*.*")],
+            title="Exporter les resultats OSINT"
+        )
+        if not fname:
+            return
+        try:
+            with open(fname, "w", encoding="utf-8") as f:
+                f.write(f"OSINT Report - {datetime.now().isoformat()}\n")
+                f.write(f"{'='*60}\n\n")
+                f.write(content)
+            messagebox.showinfo("Export", f"Rapport sauvegarde: {fname}")
+        except Exception as e:
+            messagebox.showerror("Erreur", str(e))
 # ════════════════════════ 5. PASSWORD ANALYSIS ════════════════════════
 class PasswordTab(BaseTab):
     def __init__(self, parent, app):

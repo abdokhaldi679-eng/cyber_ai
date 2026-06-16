@@ -2,5 +2,6 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+mon_venv/
 *.swp
 *.swo

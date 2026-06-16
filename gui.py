@@ -1612,6 +1612,34 @@ class OSINTTab(BaseTab):
         except Exception as e:
             self.log(self.output, f"  Erreur: {e}", "error")
 
+    # --- Shodan ---
+    def run_shodan(self):
+        self.clear(self.output)
+        t = self.get_target()
+        if not t: return
+        self.run_thread(lambda: self.do_shodan(t))
+
+    def do_shodan(self, t):
+        self.log(self.output, f"Shodan lookup pour {t}:", "bold")
+        ip = resolve_target(t)
+        api_key = "YOUR_SHODAN_API_KEY"
+        try:
+            r = requests.get(f"https://api.shodan.io/shodan/host/{ip}?key={api_key}", timeout=10)
+            if r.status_code == 200:
+                data = r.json()
+                self.log(self.output, f"  IP: {data.get('ip_str', ip)}", "success")
+                self.log(self.output, f"  Organisation: {data.get('org', 'N/A')}")
+                self.log(self.output, f"  OS: {data.get('os', 'N/A')}")
+                self.log(self.output, f"  Ports: {', '.join(str(p) for p in data.get('ports', []))}")
+                for s in data.get('data', [])[:5]:
+                    self.log(self.output, f"    {s.get('port', '?')}/{s.get('transport', '?')} - {s.get('product', '?')} {s.get('version', '')}")
+            elif r.status_code == 403:
+                self.log(self.output, "  API key invalide. Configurez 'YOUR_SHODAN_API_KEY'.", "warning")
+            else:
+                self.log(self.output, f"  HTTP {r.status_code}", "warning")
+        except Exception as e:
+            self.log(self.output, f"  Erreur: {e}", "error")
+
     # --- Wayback Machine ---
     def run_wayback(self):
         self.clear(self.output)

